@@ -158,7 +158,7 @@ function TipCard() {
       </View>
       <Text style={styles.tipBody}>
         Desconecta los cargadores y electrodomésticos que no estés usando para
-        evitar el "consumo fantasma" de energía.
+        evitar el &quot;consumo fantasma&quot; de energía.
       </Text>
     </View>
   );
