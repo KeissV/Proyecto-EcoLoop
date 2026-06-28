@@ -65,6 +65,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ focused }) => <TabIcon icon="👤" focused={focused} />,
         }}
       />
+ 
     </Tabs>
   );
 }

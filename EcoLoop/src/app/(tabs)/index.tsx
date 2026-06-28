@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import React from "react";
 import {
   View,
@@ -24,6 +25,7 @@ const C = {
   border: "#E5E5E5",
 };
 
+const router = useRouter();
 const CHALLENGES = [
   {
     id: 1,
@@ -101,11 +103,11 @@ function StatsRow() {
 
 function QuickActions() {
   const items = [
-    { icon: "🔍", label: "Buscar", color: C.blue },
-    { icon: "🎯", label: "Reto", color: C.tealIcon },
-    { icon: "🏆", label: "Logros", color: C.yellow },
-    { icon: "🌱", label: "Impacto", color: C.green },
-  ];
+      { icon: "🔍", label: "Buscar", color: C.blue, ruta: null },
+      { icon: "🎯", label: "Reto", color: C.tealIcon, ruta: null },
+      { icon: "🏆", label: "Logros", color: C.yellow, ruta: null },
+      { icon: "🌱", label: "Impacto", color: C.green, ruta: null },
+    ];
   return (
     <View style={styles.quickRow}>
       {items.map((item) => (
@@ -207,7 +209,6 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Tip */}
         <TipCard />
 
         <View style={{ height: 16 }} />
