@@ -65,7 +65,14 @@ export default function TabsLayout() {
           tabBarIcon: ({ focused }) => <TabIcon icon="👤" focused={focused} />,
         }}
       />
- 
+      <Tabs.Screen
+        name="historial"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="impacto"
+        options={{ href: null }}
+      />
     </Tabs>
   );
 }

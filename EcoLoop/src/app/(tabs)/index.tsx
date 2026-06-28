@@ -106,12 +106,12 @@ function QuickActions() {
       { icon: "🔍", label: "Buscar", color: C.blue, ruta: null },
       { icon: "🎯", label: "Reto", color: C.tealIcon, ruta: null },
       { icon: "🏆", label: "Logros", color: C.yellow, ruta: null },
-      { icon: "🌱", label: "Impacto", color: C.green, ruta: null },
+      { icon: "🌱", label: "Impacto", color: C.green, ruta: "/(tabs)/impacto" },
     ];
   return (
     <View style={styles.quickRow}>
       {items.map((item) => (
-        <TouchableOpacity key={item.label} style={styles.quickItem}>
+        <TouchableOpacity key={item.label} style={styles.quickItem} onPress={() => item.ruta && router.push(item.ruta as any)}>
           <View style={[styles.quickCircle, { backgroundColor: item.color + "22" }]}>
             <Text style={styles.quickIcon}>{item.icon}</Text>
           </View>
