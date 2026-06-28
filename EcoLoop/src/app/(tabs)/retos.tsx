@@ -1,9 +1,20 @@
-import React, { useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
-  ScrollView, TouchableOpacity, Image,
+  ScrollView, TouchableOpacity, Image, ActivityIndicator,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+
+import { auth, db } from "../../service/firebaseConfig";
+import {
+  ensureUserChallenges,
+  fetchGlobalChallenges,
+  fetchUserChallenges,
+  mergeChallenges,
+  type ChallengeView,
+} from "../../service/challengesService";
+import { doc, getDoc } from "firebase/firestore";
 
 const C = {
   green: "#3BAB4F",
@@ -20,84 +31,29 @@ const C = {
 
 type Tab = "En curso" | "Disponibles" | "Terminados";
 
-type Reto = {
-  id: string;
-  tag: string;
-  tagColor: string;
-  tagBg: string;
-  icon: any;
-  time: string;
-  points: string;
-  title: string;
-  description: string;
-  progress: number;
-  total: number;
-  done?: boolean;
+const ICONS: Record<string, any> = {
+  "recycle-icon.png": require("../../../assets/images/icons/recycle-icon.png"),
+  "tab-search.jpeg": require("../../../assets/images/icons/tab-search.jpeg"),
+  "reto-accion.jpeg": require("../../../assets/images/icons/reto-accion.jpeg"),
+  "reto-social.jpeg": require("../../../assets/images/icons/reto-social.jpeg"),
+  "reto-clasificacion.jpeg": require("../../../assets/images/icons/reto-clasificacion.jpeg"),
 };
 
-const retos: Reto[] = [
-  {
-    id: "1",
-    tag: "CLASIFICACIÓN",
-    tagColor: "#3BAB4F",
-    tagBg: "#E8F5E9",
-    icon: require("../../../assets/images/icons/recycle-icon.png"),
-    time: "10 min",
-    points: "50",
-    title: "Separa 3 tipos de residuos",
-    description: "Clasifica correctamente tus desechos hoy.",
-    progress: 2,
-    total: 3,
-  },
-  {
-    id: "2",
-    tag: "APRENDIZAJE",
-    tagColor: "#4A9EE0",
-    tagBg: "#E8F4FF",
-    icon: require("../../../assets/images/icons/tab-search.jpeg"),
-    time: "5 min",
-    points: "30",
-    title: "Identifica un material",
-    description: "Usa el buscador para aprender sobre el PET.",
-    progress: 0,
-    total: 1,
-  },
-  {
-    id: "3",
-    tag: "ACCIÓN",
-    tagColor: "#B45309",
-    tagBg: "#FEF3C7",
-    icon: require("../../../assets/images/icons/reto-accion.jpeg"),
-    time: "30 min",
-    points: "100",
-    title: "Crea una botella eco-brick",
-    description: "Rellena una botella PET con plásticos.",
-    progress: 1,
-    total: 10,
-  },
-  {
-    id: "4",
-    tag: "SOCIAL",
-    tagColor: "#059669",
-    tagBg: "#D1FAE5",
-    icon: require("../../../assets/images/icons/reto-social.jpeg"),
-    time: "5 min",
-    points: "25",
-    title: "Comparte un tip ecológico",
-    description: "Enseña a alguien algo nuevo hoy.",
-    progress: 1,
-    total: 1,
-    done: true,
-  },
-];
+function resolveIcon(iconLocal: string) {
+  if (ICONS[iconLocal]) {
+    return ICONS[iconLocal];
+  }
 
-function RetoCard({ reto, onPress }: { reto: Reto; onPress?: () => void }) {
+  return ICONS["recycle-icon.png"];
+}
+
+function RetoCard({ reto, onPress }: { reto: ChallengeView; onPress?: () => void }) {
   const pct = reto.total > 0 ? reto.progress / reto.total : 0;
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
       <View style={styles.cardTop}>
         <View style={styles.cardIconWrap}>
-          <Image source={reto.icon} style={styles.cardIcon} resizeMode="contain" />
+          <Image source={resolveIcon(reto.iconLocal)} style={styles.cardIcon} resizeMode="contain" />
         </View>
         <View style={styles.cardMeta}>
           <View style={styles.cardTagRow}>
@@ -128,6 +84,58 @@ function RetoCard({ reto, onPress }: { reto: Reto; onPress?: () => void }) {
 export default function RetosScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>("En curso");
+  const [retos, setRetos] = useState<ChallengeView[]>([]);
+  const [streakDays, setStreakDays] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+
+    if (!uid) {
+      setRetos([]);
+      setStreakDays(0);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const globalChallenges = await fetchGlobalChallenges();
+      await ensureUserChallenges(uid, globalChallenges);
+      const userChallenges = await fetchUserChallenges(uid);
+      const merged = mergeChallenges(globalChallenges, userChallenges);
+
+      const userSnap = await getDoc(doc(db, "usuarios", uid));
+      const streak = userSnap.exists() && typeof userSnap.data().racha_dias === "number"
+        ? userSnap.data().racha_dias
+        : 0;
+
+      setRetos(merged);
+      setStreakDays(streak);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
+  const visibleRetos = useMemo(() => {
+    if (activeTab === "Terminados") {
+      return retos.filter((r) => r.done || r.status === "terminado");
+    }
+
+    if (activeTab === "Disponibles") {
+      return retos.filter((r) => !r.done && r.progress === 0);
+    }
+
+    return retos.filter((r) => !r.done && r.progress > 0);
+  }, [activeTab, retos]);
+
+  const doneCount = retos.filter((r) => r.done).length;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -153,7 +161,7 @@ export default function RetosScreen() {
             </View>
             <View style={styles.rachaTextWrap}>
               <Text style={styles.rachaTitle}>Tu Racha</Text>
-              <Text style={styles.rachaSubtitle}>¡7 días seguidos cuidando el planeta!</Text>
+              <Text style={styles.rachaSubtitle}>¡{streakDays} días seguidos cuidando el planeta!</Text>
             </View>
           </View>
           <Image source={require("../../../assets/images/icons/icons8-hoja-48.png")} style={styles.rachaWatermark} resizeMode="contain" />
@@ -172,14 +180,36 @@ export default function RetosScreen() {
           ))}
         </View>
 
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator color={C.green} size="large" />
+          </View>
+        ) : null}
+
         {/* Retos */}
-        {retos.map((r) => (
+        {!loading && visibleRetos.map((r) => (
           <RetoCard
             key={r.id}
             reto={r}
-            onPress={r.title === "Identifica un material" ? () => router.push("/reto-aprendizaje") : undefined}
+            onPress={
+              r.id
+                ? () =>
+                    router.push({
+                      pathname: "/reto/[id]",
+                      params: {
+                        id: r.id,
+                      },
+                    })
+                : undefined
+            }
           />
         ))}
+
+        {!loading && !visibleRetos.length ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No hay retos en esta pestaña por ahora.</Text>
+          </View>
+        ) : null}
 
         {/* Reto Bonus */}
         <View style={styles.bonusCard}>
@@ -188,10 +218,10 @@ export default function RetosScreen() {
             <Text style={styles.bonusTag}>RETO BONUS</Text>
           </View>
           <Text style={styles.bonusTitle}>¡Completa todos los retos!</Text>
-          <Text style={styles.bonusDesc}>Gana 50 puntos extra al completar los 4 retos del día.</Text>
+          <Text style={styles.bonusDesc}>Gana 50 puntos extra al completar todos los retos activos del día.</Text>
           <View style={styles.bonusFooter}>
             <Text style={styles.bonusBtnText}>Progreso</Text>
-            <Text style={styles.bonusProgress}>1/4 completados</Text>
+            <Text style={styles.bonusProgress}>{doneCount}/{retos.length} completados</Text>
           </View>
         </View>
       </ScrollView>
@@ -285,6 +315,26 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: "800", color: C.text, marginBottom: 3 },
   cardDesc: { fontSize: 12, color: C.muted, lineHeight: 17 },
   cardPoints: { fontSize: 15, fontWeight: "800", color: "#5C6B1E", marginLeft: 8 },
+
+  loadingWrap: {
+    paddingVertical: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyState: {
+    backgroundColor: C.white,
+    borderRadius: 14,
+    paddingVertical: 20,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  emptyText: {
+    color: C.muted,
+    fontSize: 13,
+    textAlign: "center",
+  },
 
   progressRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 },
   progressTrack: {

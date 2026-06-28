@@ -119,6 +119,12 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="reto/[id]"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="reto-completado"
         options={{
           href: null,
@@ -129,6 +135,26 @@ export default function TabsLayout() {
         options={{
           href: null,
         }}
+      />
+      <Tabs.Screen
+        name="logro/[id]"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="historial"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="impacto"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="residuo/[id]"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="medalla-conseguida"
+        options={{ href: null }}
       />
     </Tabs>
   );
