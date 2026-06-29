@@ -19,7 +19,8 @@ const C = {
 
 export default function MedallaConseguidaScreen() {
   const router = useRouter();
-  const { title, description } = useLocalSearchParams<{ title?: string; description?: string }>();
+  const { title, description, next } = useLocalSearchParams<{ title?: string; description?: string; next?: string }>();
+  const nextRoute = next && next.startsWith("/") ? next : "/logros";
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -34,7 +35,7 @@ export default function MedallaConseguidaScreen() {
           <Text style={styles.medalTitle}>{title || "Medalla desbloqueada"}</Text>
           <Text style={styles.description}>{description || "Has cumplido una condicion de logro."}</Text>
 
-          <TouchableOpacity style={styles.button} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.button} onPress={() => router.replace(nextRoute)}>
             <Text style={styles.buttonText}>Genial</Text>
           </TouchableOpacity>
         </View>

@@ -44,7 +44,7 @@ export default function RetoCompletadoScreen() {
         const first = unlocked[0];
         router.replace({
           pathname: "/medalla-conseguida",
-          params: { title: first.title, description: first.description },
+          params: { title: first.title, description: first.description, next: "/retos" },
         });
       }
     }
@@ -101,7 +101,7 @@ export default function RetoCompletadoScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.ctaButton} onPress={() => router.push("/retos")}>
+          <TouchableOpacity style={styles.ctaButton} onPress={() => router.replace("/retos")}>
             <Text style={styles.ctaText}>Continuar →</Text>
           </TouchableOpacity>
         </View>

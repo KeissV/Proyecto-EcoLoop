@@ -239,6 +239,10 @@ export default function BuscarScreen() {
     });
 
     const uid = auth.currentUser?.uid;
+    let rewardRetoId: string | null = null;
+    let rewardPoints: string | null = null;
+    let rewardTitle: string | null = null;
+    let rewardDescription: string | null = null;
 
     if (uid) {
       try {
@@ -260,31 +264,31 @@ export default function BuscarScreen() {
 
         if (completed.length > 0) {
           const first = completed[0];
-          router.replace({
-            pathname: "/reto-completado",
-            params: {
-              retoId: first.id,
-              points: `${first.puntos}`,
-            },
-          });
-          return;
+          rewardRetoId = first.id;
+          rewardPoints = `${first.puntos}`;
         }
 
-        const unlocked = await validateAndUnlockAchievements(uid);
+        const unlocked = rewardRetoId ? [] : await validateAndUnlockAchievements(uid);
         if (unlocked.length > 0) {
           const first = unlocked[0];
-          router.push({
-            pathname: "/medalla-conseguida",
-            params: { title: first.title, description: first.description },
-          });
-          return;
+          rewardTitle = first.title;
+          rewardDescription = first.description;
         }
       } catch {
         // Mantener navegación normal si falla validación.
       }
     }
 
-    router.push({ pathname: "/residuo/[id]", params: { id: item.docId } });
+    router.push({
+      pathname: "/residuo/[id]",
+      params: {
+        id: item.docId,
+        rewardRetoId: rewardRetoId ?? undefined,
+        rewardPoints: rewardPoints ?? undefined,
+        rewardTitle: rewardTitle ?? undefined,
+        rewardDescription: rewardDescription ?? undefined,
+      },
+    });
   }
 
   function openRecentSearch(label: string) {

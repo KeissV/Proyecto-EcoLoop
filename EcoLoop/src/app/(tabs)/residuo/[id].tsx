@@ -66,7 +66,13 @@ function resolveImageSource(item: WasteDetail, remoteFailed: boolean) {
 
 export default function ResiduoDetalleScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, rewardRetoId, rewardPoints, rewardTitle, rewardDescription } = useLocalSearchParams<{
+    id?: string;
+    rewardRetoId?: string;
+    rewardPoints?: string;
+    rewardTitle?: string;
+    rewardDescription?: string;
+  }>();
   const [item, setItem] = useState<WasteDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [remoteImageFailed, setRemoteImageFailed] = useState(false);
@@ -144,6 +150,55 @@ export default function ResiduoDetalleScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {rewardRetoId ? (
+          <View style={styles.rewardNoticeCard}>
+            <View style={styles.rewardNoticeHeader}>
+              <Text style={styles.rewardNoticeEmoji}>✅</Text>
+              <Text style={styles.rewardNoticeTitle}>Reto completado</Text>
+            </View>
+            <Text style={styles.rewardNoticeDescription}>Excelente, validar este material completo uno de tus retos activos.</Text>
+            <TouchableOpacity
+              style={styles.rewardNoticeButton}
+              onPress={() =>
+                router.push({
+                  pathname: "/reto-completado",
+                  params: {
+                    retoId: rewardRetoId,
+                    points: rewardPoints ?? "0",
+                  },
+                })
+              }
+            >
+              <Text style={styles.rewardNoticeButtonText}>Reclamar recompensa</Text>
+              <Text style={styles.rewardNoticeButtonArrow}>→</Text>
+            </TouchableOpacity>
+          </View>
+        ) : rewardTitle || rewardDescription ? (
+          <View style={styles.rewardNoticeCard}>
+            <View style={styles.rewardNoticeHeader}>
+              <Text style={styles.rewardNoticeEmoji}>🏅</Text>
+              <Text style={styles.rewardNoticeTitle}>Medalla desbloqueada</Text>
+            </View>
+            <Text style={styles.rewardNoticeDescription}>Ya ganaste una nueva medalla por tu progreso. Puedes verla ahora.</Text>
+            <TouchableOpacity
+              style={styles.rewardNoticeButton}
+              onPress={() =>
+                router.push({
+                  pathname: "/medalla-conseguida",
+                  params: {
+                    title: rewardTitle,
+                    description: rewardDescription,
+                    next: "/logros",
+                  },
+                })
+              }
+            >
+              <Text style={styles.rewardNoticeButtonText}>Ver medalla</Text>
+              <Text style={styles.rewardNoticeButtonArrow}>→</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.productCard}>
           <View style={styles.cardAccent} />
           <View style={styles.imageContainer}>
@@ -270,6 +325,57 @@ const styles = StyleSheet.create({
     padding: 18,
     paddingBottom: 30,
     gap: 14,
+  },
+  rewardNoticeCard: {
+    backgroundColor: "#EAF8ED",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#CAE7D0",
+    padding: 14,
+  },
+  rewardNoticeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  rewardNoticeEmoji: {
+    fontSize: 18,
+  },
+  rewardNoticeCard: {
+    display: "none",
+  },
+  rewardNoticeTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1E7D3A",
+  },
+  rewardNoticeDescription: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 18,
+    color: C.textMuted,
+  },
+  rewardNoticeButton: {
+    marginTop: 12,
+    alignSelf: "flex-start",
+    backgroundColor: C.green,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  rewardNoticeButtonText: {
+    color: C.white,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  rewardNoticeButtonArrow: {
+    color: C.white,
+    fontSize: 14,
+    fontWeight: "800",
+    lineHeight: 14,
   },
   productCard: {
     backgroundColor: C.white,

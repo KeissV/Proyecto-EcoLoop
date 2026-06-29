@@ -195,7 +195,7 @@ export default function LogrosScreen() {
         const first = unlockedNow[0];
         router.push({
           pathname: "/medalla-conseguida",
-          params: { title: first.title, description: first.description },
+          params: { title: first.title, description: first.description, next: "/logros" },
         });
       }
 

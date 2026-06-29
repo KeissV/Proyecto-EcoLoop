@@ -1,5 +1,9 @@
-import { Tabs } from "expo-router";
+import { useEffect, useState } from "react";
+import { Redirect, Tabs } from "expo-router";
 import { Image } from "react-native";
+import { User, onAuthStateChanged } from "firebase/auth";
+
+import { auth } from "../../service/firebaseConfig";
 
 const GREEN = "#3BAB4F";
 const MUTED = "#888";
@@ -15,6 +19,26 @@ function TabIcon({ icon, focused }: { icon: any; focused: boolean }) {
 }
 
 export default function TabsLayout() {
+  const [authReady, setAuthReady] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+      setAuthReady(true);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  if (!authReady) {
+    return null;
+  }
+
+  if (!user) {
+    return <Redirect href="/login" />;
+  }
+
   return (
     <Tabs
       screenOptions={{
