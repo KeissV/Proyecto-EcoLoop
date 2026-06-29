@@ -153,6 +153,10 @@ export default function TabsLayout() {
         options={{ href: null }}
       />
       <Tabs.Screen
+        name="categoria/[slug]"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
         name="medalla-conseguida"
         options={{ href: null }}
       />

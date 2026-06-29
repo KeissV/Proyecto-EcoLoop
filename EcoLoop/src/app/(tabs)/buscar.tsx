@@ -100,6 +100,14 @@ function normalizeText(value: string) {
     .toLowerCase();
 }
 
+function slugifyCategory(value: string) {
+  return normalizeText(value)
+    .replace(/\//g, "-")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function getCategoryMeta(category: string) {
   const normalized = normalizeText(category);
 
@@ -395,7 +403,11 @@ export default function BuscarScreen() {
             const meta = getCategoryMeta(cat.label);
 
             return (
-              <TouchableOpacity key={cat.label} style={styles.categoryCard} onPress={() => setQuery(cat.label)}>
+              <TouchableOpacity
+                key={cat.label}
+                style={styles.categoryCard}
+                onPress={() => router.push({ pathname: "/categoria/[slug]", params: { slug: slugifyCategory(cat.label) } })}
+              >
                 <Image source={meta.icon} style={styles.categoryIconImage} resizeMode="contain" />
                 <Text style={styles.categoryLabel}>{cat.label}</Text>
                 <Text style={styles.categoryCount}>{cat.total} residuos</Text>
