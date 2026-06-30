@@ -1,16 +1,31 @@
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  StatusBar,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
+  ActivityIndicator,
   Image,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { doc, increment, serverTimestamp, setDoc } from "firebase/firestore";
+
+import {
+  fetchWasteItems,
+  filterWasteItems,
+  rankMostSearched,
+  registerWasteSearch,
+  type WasteSearchItem,
+} from "../../service/wasteSearch";
+import { auth, db } from "../../service/firebaseConfig";
+import { validateSearchForChallenges } from "../../service/challengesService";
+import { validateAndUnlockAchievements } from "../../service/achievementsService";
 
 const C = {
   green: "#3BAB4F",
@@ -25,22 +40,43 @@ const C = {
   purple: "#A76BE9",
 };
 
-const recentSearches = ["Botella de plástico", "Cáscara de banana"];
-const categories = [
-  { icon: require("../../../assets/images/icons/organic.jpeg"), label: "Orgánico" },
-  { icon: require("../../../assets/images/icons/plastic.jpeg"), label: "Plástico" },
-  { icon: require("../../../assets/images/icons/paper-carton.jpeg"), label: "Papel/Cartón" },
-  { icon: require("../../../assets/images/icons/glass.jpeg"), label: "Vidrio" },
-  { icon: require("../../../assets/images/icons/metal.jpeg"), label: "Metal" },
-  { icon: require("../../../assets/images/icons/hazard.jpeg"), label: "Peligroso" },
-];
-const popularItems = [
-  { icon: "🧴", title: "Botella PET", subtitle: "Plástico", color: C.yellow },
-  { icon: "🍌", title: "Cáscara de fruta", subtitle: "Orgánico", color: C.green },
-  { icon: "📰", title: "Periódico", subtitle: "Papel", color: C.blue },
-  { icon: "🥫", title: "Lata de refresco", subtitle: "Aluminio", color: C.orange },
-  { icon: "📦", title: "Caja de cartón", subtitle: "Papel", color: C.purple },
-];
+const CATEGORY_META: Record<string, { icon: any; emoji: string; color: string }> = {
+  "Orgánico": {
+    icon: require("../../../assets/images/icons/organic.jpeg"),
+    emoji: "🍌",
+    color: C.green,
+  },
+  "Plástico": {
+    icon: require("../../../assets/images/icons/plastic.jpeg"),
+    emoji: "🧴",
+    color: C.yellow,
+  },
+  "Papel/Cartón": {
+    icon: require("../../../assets/images/icons/paper-carton.jpeg"),
+    emoji: "📦",
+    color: C.blue,
+  },
+  Vidrio: {
+    icon: require("../../../assets/images/icons/glass.jpeg"),
+    emoji: "🍾",
+    color: C.blue,
+  },
+  Metal: {
+    icon: require("../../../assets/images/icons/metal.jpeg"),
+    emoji: "🥫",
+    color: C.orange,
+  },
+  Peligroso: {
+    icon: require("../../../assets/images/icons/hazard.jpeg"),
+    emoji: "⚠️",
+    color: C.purple,
+  },
+  General: {
+    icon: require("../../../assets/images/icons/tab-search.jpeg"),
+    emoji: "♻️",
+    color: C.green,
+  },
+};
 
 function Header() {
   return (
@@ -56,8 +92,213 @@ function Header() {
   );
 }
 
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function slugifyCategory(value: string) {
+  return normalizeText(value)
+    .replace(/\//g, "-")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function getCategoryMeta(category: string) {
+  const normalized = normalizeText(category);
+
+  if (normalized.includes("organ")) {
+    return CATEGORY_META["Orgánico"];
+  }
+
+  if (normalized.includes("plastic")) {
+    return CATEGORY_META["Plástico"];
+  }
+
+  if (normalized.includes("papel") || normalized.includes("carton")) {
+    return CATEGORY_META["Papel/Cartón"];
+  }
+
+  if (normalized.includes("vidrio")) {
+    return CATEGORY_META.Vidrio;
+  }
+
+  if (normalized.includes("metal") || normalized.includes("alumin")) {
+    return CATEGORY_META.Metal;
+  }
+
+  if (normalized.includes("pelig") || normalized.includes("hazard")) {
+    return CATEGORY_META.Peligroso;
+  }
+
+  return CATEGORY_META.General;
+}
+
+function Thumbnail({ item }: { item: WasteSearchItem }) {
+  const meta = getCategoryMeta(item.category);
+
+  if (item.imageUrl) {
+    return <Image source={{ uri: item.imageUrl }} style={styles.thumbImage} resizeMode="cover" />;
+  }
+
+  return (
+    <View style={[styles.thumbFallback, { backgroundColor: `${meta.color}22` }]}>
+      <Text style={styles.thumbEmoji}>{meta.emoji}</Text>
+    </View>
+  );
+}
+
 export default function BuscarScreen() {
   const router = useRouter();
+  const { retoId } = useLocalSearchParams<{ retoId?: string }>();
+  const [query, setQuery] = useState("");
+  const [items, setItems] = useState<WasteSearchItem[]>([]);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadWasteItems() {
+      try {
+        setLoading(true);
+        setError(null);
+        const loadedItems = await fetchWasteItems();
+
+        if (!active) {
+          return;
+        }
+
+        setItems(loadedItems);
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setError("No se pudo cargar la información desde la base de datos.");
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadWasteItems();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setQuery("");
+    }, [])
+  );
+
+  const results = filterWasteItems(items, query);
+  const categoryItems = items
+    .reduce<{ label: string; total: number }[]>((acc, item) => {
+      const existing = acc.find((entry) => normalizeText(entry.label) === normalizeText(item.category));
+
+      if (existing) {
+        existing.total += 1;
+        return acc;
+      }
+
+      acc.push({ label: item.category, total: 1 });
+      return acc;
+    }, [])
+    .sort((left, right) => right.total - left.total)
+    .slice(0, 6);
+  const popularItems = rankMostSearched(items).slice(0, 5);
+
+  async function openItem(item: WasteSearchItem) {
+    setQuery(item.title);
+
+    setRecentSearches((current) => {
+      const next = [item.title, ...current.filter((entry) => entry !== item.title)];
+      return next.slice(0, 5);
+    });
+
+    setItems((current) =>
+      current.map((entry) =>
+        entry.docId === item.docId
+          ? { ...entry, popularity: entry.popularity + 1 }
+          : entry
+      )
+    );
+
+    registerWasteSearch(item, query || item.title).catch(() => {
+      // No interrumpe la navegación si falla el contador global.
+    });
+
+    const uid = auth.currentUser?.uid;
+    let rewardRetoId: string | null = null;
+    let rewardPoints: string | null = null;
+    let rewardTitle: string | null = null;
+    let rewardDescription: string | null = null;
+
+    if (uid) {
+      try {
+        await setDoc(
+          doc(db, "usuarios", uid),
+          {
+            lecciones_completadas: increment(1),
+            materiales_consultados: increment(1),
+            ultimo_ingreso: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        const completed = await validateSearchForChallenges(
+          uid,
+          { materialId: item.docId, category: item.category },
+          retoId
+        );
+
+        if (completed.length > 0) {
+          const first = completed[0];
+          rewardRetoId = first.id;
+          rewardPoints = `${first.puntos}`;
+        }
+
+        const unlocked = rewardRetoId ? [] : await validateAndUnlockAchievements(uid);
+        if (unlocked.length > 0) {
+          const first = unlocked[0];
+          rewardTitle = first.title;
+          rewardDescription = first.description;
+        }
+      } catch {
+        // Mantener navegación normal si falla validación.
+      }
+    }
+
+    router.push({
+      pathname: "/residuo/[id]",
+      params: {
+        id: item.docId,
+        rewardRetoId: rewardRetoId ?? undefined,
+        rewardPoints: rewardPoints ?? undefined,
+        rewardTitle: rewardTitle ?? undefined,
+        rewardDescription: rewardDescription ?? undefined,
+      },
+    });
+  }
+
+  function openRecentSearch(label: string) {
+    setQuery(label);
+    const matchedItem = items.find((item) => normalizeText(item.title) === normalizeText(label));
+
+    if (matchedItem) {
+      openItem(matchedItem);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -80,6 +321,8 @@ export default function BuscarScreen() {
             style={styles.searchInput}
             placeholder="¿Qué quieres reciclar?"
             placeholderTextColor="#999"
+            value={query}
+            onChangeText={setQuery}
           />
           <TouchableOpacity style={styles.iconButton}>
             <Image
@@ -97,68 +340,113 @@ export default function BuscarScreen() {
           </TouchableOpacity>
         </View>
 
+        {query.trim() ? (
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>Resultados</Text>
+
+            {loading ? (
+              <View style={styles.feedbackCard}>
+                <ActivityIndicator size="small" color={C.green} />
+                <Text style={styles.feedbackText}>Consultando la base de datos...</Text>
+              </View>
+            ) : error ? (
+              <View style={styles.feedbackCard}>
+                <Text style={styles.feedbackText}>{error}</Text>
+              </View>
+            ) : results.length === 0 ? (
+              <View style={styles.feedbackCard}>
+                <Text style={styles.feedbackText}>No hay coincidencias para tu búsqueda en Firestore.</Text>
+              </View>
+            ) : (
+              <View style={styles.list}>
+                {results.map((item) => {
+                  const meta = getCategoryMeta(item.category);
+
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.popularRow}
+                      onPress={() => openItem(item)}
+                    >
+                      <Thumbnail item={item} />
+                      <View style={styles.popularInfo}>
+                        <Text style={styles.popularTitle}>{item.title}</Text>
+                        <Text style={styles.popularSubtitle}>{item.subtitle}</Text>
+                      </View>
+                      <View style={[styles.statusDot, { backgroundColor: meta.color }]} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        ) : null}
+
         <View style={styles.blockHeader}>
           <Text style={styles.sectionTitle}>Búsquedas recientes</Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => setRecentSearches([])}>
             <Text style={styles.clearText}>Limpiar</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.recentRow}>
           {recentSearches.map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={styles.recentChip}
-              onPress={item === "Cáscara de banana" ? () => router.push("/cascara-banana") : undefined}
-            >
+            <TouchableOpacity key={item} style={styles.recentChip} onPress={() => openRecentSearch(item)}>
               <Text style={styles.recentText}>{item}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
+        {!recentSearches.length ? (
+          <Text style={styles.emptyRecentText}>Tus búsquedas seleccionadas aparecerán aquí.</Text>
+        ) : null}
+
         <Text style={styles.sectionTitle}>Categorías</Text>
         <View style={styles.grid}>
-          {categories.map((cat) => (
-            <TouchableOpacity
-              key={cat.label}
-              style={styles.categoryCard}
-              onPress={cat.label === "Plástico" ? () => router.push("/plasticos") : undefined}
-            >
-              <Image source={cat.icon} style={styles.categoryIconImage} resizeMode="contain" />
-              <Text style={styles.categoryLabel}>{cat.label}</Text>
-            </TouchableOpacity>
-          ))}
+          {categoryItems.map((cat) => {
+            const meta = getCategoryMeta(cat.label);
+
+            return (
+              <TouchableOpacity
+                key={cat.label}
+                style={styles.categoryCard}
+                onPress={() => router.push({ pathname: "/categoria/[slug]", params: { slug: slugifyCategory(cat.label) } })}
+              >
+                <Image source={meta.icon} style={styles.categoryIconImage} resizeMode="contain" />
+                <Text style={styles.categoryLabel}>{cat.label}</Text>
+                <Text style={styles.categoryCount}>{cat.total} residuos</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {!loading && !categoryItems.length ? (
+          <View style={styles.feedbackCard}>
+            <Text style={styles.feedbackText}>No hay categorías disponibles porque Firestore no devolvió residuos.</Text>
+          </View>
+        ) : null}
 
         <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Más buscados</Text>
         <View style={styles.list}>
           {popularItems.map((item) => (
-            <TouchableOpacity
-              key={item.title}
-              style={styles.popularRow}
-              onPress={
-                item.title === "Botella PET"
-                  ? () => router.push("/botella-pet")
-                  : undefined
-              }
-            >
+            <TouchableOpacity key={item.id} style={styles.popularRow} onPress={() => openItem(item)}>
               <View style={styles.popularLeft}>
-                <View style={styles.popularIconWrap}>
-                  {typeof item.icon === "string" ? (
-                    <Text style={styles.popularIcon}>{item.icon}</Text>
-                  ) : (
-                    <Image source={item.icon} style={styles.popularIconImage} resizeMode="contain" />
-                  )}
-                </View>
+                <Thumbnail item={item} />
                 <View style={styles.popularInfo}>
                   <Text style={styles.popularTitle}>{item.title}</Text>
                   <Text style={styles.popularSubtitle}>{item.subtitle}</Text>
                 </View>
               </View>
-              <View style={[styles.statusDot, { backgroundColor: item.color }]} />
+              <View style={[styles.statusDot, { backgroundColor: getCategoryMeta(item.category).color }]} />
             </TouchableOpacity>
           ))}
         </View>
+
+        {!loading && !popularItems.length ? (
+          <View style={styles.feedbackCard}>
+            <Text style={styles.feedbackText}>Aún no hay búsquedas globales registradas.</Text>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -177,6 +465,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 28,
+  },
+  sectionBlock: {
+    marginBottom: 20,
   },
   heading: {
     fontSize: 28,
@@ -198,10 +489,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
-  searchIcon: {
-    fontSize: 20,
-    marginRight: 10,
-  },
   searchIconImage: {
     width: 22,
     height: 22,
@@ -221,9 +508,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 8,
-  },
-  iconButtonText: {
-    fontSize: 18,
   },
   iconButtonImage: {
     width: 18,
@@ -278,6 +562,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+    marginBottom: 10,
+  },
+  emptyRecentText: {
+    color: C.textMuted,
+    fontSize: 14,
     marginBottom: 22,
   },
   recentChip: {
@@ -323,6 +612,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: C.text,
   },
+  categoryCount: {
+    fontSize: 12,
+    color: C.textMuted,
+    marginTop: 6,
+  },
   list: {
     marginTop: 8,
   },
@@ -340,7 +634,24 @@ const styles = StyleSheet.create({
   popularLeft: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 1,
   },
+  thumbImage: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    marginRight: 10,
+    backgroundColor: "#F1F5F9",
+  },
+  thumbFallback: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  thumbEmoji: { fontSize: 20 },
   popularIconWrap: {
     width: 48,
     height: 48,
@@ -353,12 +664,9 @@ const styles = StyleSheet.create({
   popularIcon: {
     fontSize: 22,
   },
-  popularIconImage: {
-    width: 26,
-    height: 26,
-  },
   popularInfo: {
     justifyContent: "center",
+    flex: 1,
   },
   popularTitle: {
     fontSize: 16,
@@ -374,5 +682,24 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
+    marginLeft: 12,
+  },
+  feedbackCard: {
+    backgroundColor: C.white,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 12,
+  },
+  feedbackText: {
+    flex: 1,
+    color: C.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

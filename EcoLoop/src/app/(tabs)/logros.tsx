@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
@@ -10,6 +11,11 @@ import {
   Image,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+
+import { auth, db } from "../../service/firebaseConfig";
+import { validateAndUnlockAchievements } from "../../service/achievementsService";
 
 const C = {
   green: "#22C55E",
@@ -33,6 +39,93 @@ type Achievement = {
   kind: "star" | "recycle" | "fire" | "compost" | "blocked" | "walk" | "energy" | "water";
   onPress?: () => void;
 };
+
+type AchievementDoc = {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  condicionTipo: string;
+  condicionValor: number;
+  orden: number;
+  ruta?: string;
+  tipo: "star" | "recycle" | "fire" | "compost" | "blocked" | "walk" | "energy" | "water";
+};
+
+type UserMetrics = {
+  lecciones_completadas: number;
+  racha_dias: number;
+  objetos_reciclados: number;
+  retos_completados: number;
+  puntos_totales: number;
+};
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function mapBadgeKind(tipo: string): AchievementDoc["tipo"] {
+  const normalized = normalizeText(tipo);
+
+  if (normalized.includes("fire") || normalized.includes("fuego") || normalized.includes("racha")) {
+    return "fire";
+  }
+
+  if (normalized.includes("recycle") || normalized.includes("recicl")) {
+    return "recycle";
+  }
+
+  if (normalized.includes("water") || normalized.includes("agua")) {
+    return "water";
+  }
+
+  if (normalized.includes("energy") || normalized.includes("energia")) {
+    return "energy";
+  }
+
+  if (normalized.includes("compost")) {
+    return "compost";
+  }
+
+  if (normalized.includes("walk") || normalized.includes("camina")) {
+    return "walk";
+  }
+
+  return "star";
+}
+
+function readMetricValue(metrics: UserMetrics, condicionTipo: string) {
+  const normalized = normalizeText(condicionTipo);
+
+  if (normalized.includes("lecciones")) {
+    return metrics.lecciones_completadas;
+  }
+
+  if (normalized.includes("materiales") || normalized.includes("consultados")) {
+    return metrics.lecciones_completadas;
+  }
+
+  if (normalized.includes("racha")) {
+    return metrics.racha_dias;
+  }
+
+  if (normalized.includes("objetos") || normalized.includes("reciclados")) {
+    return metrics.objetos_reciclados;
+  }
+
+  if (normalized.includes("retos")) {
+    return metrics.retos_completados;
+  }
+
+  if (normalized.includes("puntos")) {
+    return metrics.puntos_totales;
+  }
+
+  return 0;
+}
 
 function Header() {
   return (
@@ -82,66 +175,108 @@ function AchievementCard({ achievement }: { achievement: Achievement }) {
 
 export default function LogrosScreen() {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
 
-  const achievements: Achievement[] = [
-    {
-      id: "1",
-      title: "Primer Paso",
-      description: "Completaste tu primera lección ambiental.",
-      unlocked: true,
-      kind: "star",
-    },
-    {
-      id: "2",
-      title: "Reciclador\nNovato",
-      description: "Separaste tus primeros 10 objetos.",
-      unlocked: true,
-      kind: "recycle",
-    },
-    {
-      id: "3",
-      title: "Racha Activa",
-      description: "7 días seguidos aprendiendo en la app.",
-      unlocked: true,
-      kind: "fire",
-      onPress: () => router.push("/logro-racha-activa"),
-    },
-    {
-      id: "4",
-      title: "Maestro\nCompost",
-      description: "Crea tu primer compostaje en casa.",
-      unlocked: false,
-      kind: "compost",
-    },
-    {
-      id: "5",
-      title: "Cero Plástico",
-      description: "Una semana sin plásticos de un solo uso.",
-      unlocked: false,
-      kind: "blocked",
-    },
-    {
-      id: "6",
-      title: "Héroe Local",
-      description: "Participa en una limpieza comunitaria.",
-      unlocked: false,
-      kind: "walk",
-    },
-    {
-      id: "7",
-      title: "Ahorro Energía",
-      description: "Reduce tu consumo eléctrico un 10%.",
-      unlocked: false,
-      kind: "energy",
-    },
-    {
-      id: "8",
-      title: "Guardián del\nAgua",
-      description: "Completa el módulo de conservación de agua.",
-      unlocked: false,
-      kind: "water",
-    },
-  ];
+  const loadData = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+
+    if (!uid) {
+      setAchievements([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const unlockedNow = await validateAndUnlockAchievements(uid);
+      if (unlockedNow.length > 0) {
+        const first = unlockedNow[0];
+        router.push({
+          pathname: "/medalla-conseguida",
+          params: { title: first.title, description: first.description, next: "/logros" },
+        });
+      }
+
+      const [logrosSnap, userSnap] = await Promise.all([
+        getDocs(collection(db, "logros")),
+        getDoc(doc(db, "usuarios", uid)),
+      ]);
+
+      const userData = userSnap.exists() ? userSnap.data() : {};
+      const metrics: UserMetrics = {
+        lecciones_completadas: typeof userData.lecciones_completadas === "number" ? userData.lecciones_completadas : 0,
+        racha_dias: typeof userData.racha_dias === "number" ? userData.racha_dias : 0,
+        objetos_reciclados: typeof userData.objetos_reciclados === "number" ? userData.objetos_reciclados : 0,
+        retos_completados: typeof userData.retos_completados === "number" ? userData.retos_completados : 0,
+        puntos_totales: typeof userData.puntos_totales === "number" ? userData.puntos_totales : 0,
+      };
+
+      const docs: AchievementDoc[] = [];
+
+      logrosSnap.forEach((snap) => {
+        const data = snap.data() as Record<string, unknown>;
+        const activo = typeof data.activo === "boolean" ? data.activo : true;
+        if (!activo) {
+          return;
+        }
+
+        docs.push({
+          id: snap.id,
+          titulo: typeof data.titulo === "string" ? data.titulo : "Logro",
+          descripcion: typeof data.descripcion === "string" ? data.descripcion : "",
+          condicionTipo: typeof data.condicion_tipo === "string" ? data.condicion_tipo : "",
+          condicionValor: typeof data.condicion_valor === "number" ? data.condicion_valor : 1,
+          orden: typeof data.orden === "number" ? data.orden : 999,
+          ruta: typeof data.ruta === "string" ? data.ruta : undefined,
+          tipo: mapBadgeKind(typeof data.tipo === "string" ? data.tipo : "star"),
+        });
+      });
+
+      const mapped: Achievement[] = docs
+        .sort((a, b) => {
+          if (a.orden !== b.orden) {
+            return a.orden - b.orden;
+          }
+          return a.titulo.localeCompare(b.titulo, "es");
+        })
+        .map((item) => {
+          const metricValue = readMetricValue(metrics, item.condicionTipo);
+          const unlocked = metricValue >= item.condicionValor;
+
+          return {
+            id: item.id,
+            title: item.titulo,
+            description: item.descripcion,
+            unlocked,
+            kind: item.tipo,
+            onPress:
+              unlocked
+                ? () =>
+                    router.push({
+                      pathname: "/logro/[id]",
+                      params: { id: item.id },
+                    })
+                : undefined,
+          };
+        });
+
+      setAchievements(mapped);
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
+  const unlockedCount = useMemo(() => achievements.filter((item) => item.unlocked).length, [achievements]);
+  const totalCount = achievements.length;
+  const percent = totalCount > 0 ? Math.round((unlockedCount / totalCount) * 100) : 0;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -150,7 +285,7 @@ export default function LogrosScreen() {
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.pageTitle}>Tus Logros</Text>
-        <Text style={styles.pageSubtitle}>Has desbloqueado 3 de 8 medallas. ¡Sigue así!</Text>
+        <Text style={styles.pageSubtitle}>Has desbloqueado {unlockedCount} de {totalCount} medallas. ¡Sigue asi!</Text>
 
         <TouchableOpacity style={styles.impactCard} activeOpacity={0.8}>
           <View style={styles.impactLeft}>
@@ -173,18 +308,24 @@ export default function LogrosScreen() {
               </View>
               <Text style={styles.progressLabel}>Camino de aprendizaje</Text>
             </View>
-            <Text style={styles.progressPercent}>38%</Text>
+            <Text style={styles.progressPercent}>{percent}%</Text>
           </View>
           <View style={styles.progressTrack}>
-            <View style={styles.progressFill} />
+            <View style={[styles.progressFill, { width: `${percent}%` }]} />
           </View>
         </View>
 
-        <View style={styles.grid}>
-          {achievements.map((achievement) => (
-            <AchievementCard key={achievement.id} achievement={achievement} />
-          ))}
-        </View>
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator color={C.green} size="large" />
+          </View>
+        ) : (
+          <View style={styles.grid}>
+            {achievements.map((achievement) => (
+              <AchievementCard key={achievement.id} achievement={achievement} />
+            ))}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -332,10 +473,15 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressFill: {
-    width: "38%",
+    width: "0%",
     height: "100%",
     borderRadius: 999,
     backgroundColor: C.green,
+  },
+  loadingWrap: {
+    paddingVertical: 20,
+    alignItems: "center",
+    justifyContent: "center",
   },
   grid: {
     flexDirection: "row",

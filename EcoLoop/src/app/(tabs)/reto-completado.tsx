@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,9 @@ import {
   TouchableOpacity,
   Image,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { auth } from "../../service/firebaseConfig";
+import { validateAndUnlockAchievements } from "../../service/achievementsService";
 
 const C = {
   green: "#22C55E",
@@ -24,6 +26,35 @@ const C = {
 
 export default function RetoCompletadoScreen() {
   const router = useRouter();
+  const { points } = useLocalSearchParams<{ points?: string }>();
+  const rewardPoints = points && !Number.isNaN(Number(points)) ? Number(points) : 50;
+
+  useEffect(() => {
+    let active = true;
+
+    async function validateAchievements() {
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        return;
+      }
+
+      const unlocked = await validateAndUnlockAchievements(uid);
+
+      if (active && unlocked.length > 0) {
+        const first = unlocked[0];
+        router.replace({
+          pathname: "/medalla-conseguida",
+          params: { title: first.title, description: first.description, next: "/retos" },
+        });
+      }
+    }
+
+    validateAchievements();
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -53,7 +84,7 @@ export default function RetoCompletadoScreen() {
                   resizeMode="contain"
                 />
               </View>
-              <Text style={styles.rewardValue}>+50</Text>
+              <Text style={styles.rewardValue}>+{rewardPoints}</Text>
               <Text style={styles.rewardLabel}>Puntos</Text>
             </View>
 
@@ -70,7 +101,7 @@ export default function RetoCompletadoScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.ctaButton} onPress={() => router.push("/retos")}>
+          <TouchableOpacity style={styles.ctaButton} onPress={() => router.replace("/retos")}>
             <Text style={styles.ctaText}>Continuar →</Text>
           </TouchableOpacity>
         </View>
