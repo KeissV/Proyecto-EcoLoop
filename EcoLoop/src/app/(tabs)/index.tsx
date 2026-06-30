@@ -1,13 +1,12 @@
 import { useRouter } from "expo-router";
-import React from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  StatusBar,
   SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const C = {
@@ -57,13 +56,18 @@ const CHALLENGES = [
 ];
 
 function Header() {
+  const router = useRouter();
+
   return (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
         <Text style={styles.headerLogo}>🌍</Text>
         <Text style={styles.headerTitle}>EcoLoop</Text>
       </View>
-      <TouchableOpacity style={styles.bellBtn}>
+      <TouchableOpacity
+        style={styles.bellBtn}
+        onPress={() => router.push("/notificaciones")}
+      >
         <Text style={styles.bellIcon}>🔔</Text>
       </TouchableOpacity>
     </View>

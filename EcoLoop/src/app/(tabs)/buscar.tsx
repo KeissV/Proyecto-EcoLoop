@@ -1,4 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { doc, increment, serverTimestamp, setDoc } from "firebase/firestore";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -11,11 +14,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
-import { useLocalSearchParams } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
-import { doc, increment, serverTimestamp, setDoc } from "firebase/firestore";
 
+import { validateAndUnlockAchievements } from "../../service/achievementsService";
+import { validateSearchForChallenges } from "../../service/challengesService";
+import { auth, db } from "../../service/firebaseConfig";
 import {
   fetchWasteItems,
   filterWasteItems,
@@ -23,9 +25,6 @@ import {
   registerWasteSearch,
   type WasteSearchItem,
 } from "../../service/wasteSearch";
-import { auth, db } from "../../service/firebaseConfig";
-import { validateSearchForChallenges } from "../../service/challengesService";
-import { validateAndUnlockAchievements } from "../../service/achievementsService";
 
 const C = {
   green: "#3BAB4F",
@@ -79,13 +78,18 @@ const CATEGORY_META: Record<string, { icon: any; emoji: string; color: string }>
 };
 
 function Header() {
+  const router = useRouter();
+
   return (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
         <Text style={styles.headerLogo}>🌍</Text>
         <Text style={styles.headerTitle}>EcoLoop</Text>
       </View>
-      <TouchableOpacity style={styles.bellBtn}>
+      <TouchableOpacity
+        style={styles.bellBtn}
+        onPress={() => router.push("/notificaciones")}
+      >
         <Text style={styles.bellIcon}>🔔</Text>
       </TouchableOpacity>
     </View>

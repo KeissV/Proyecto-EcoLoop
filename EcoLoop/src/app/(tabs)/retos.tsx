@@ -1,12 +1,19 @@
-import React, { useCallback, useMemo, useState } from "react";
-import { useRouter } from "expo-router";
-import {
-  View, Text, StyleSheet, SafeAreaView, StatusBar,
-  ScrollView, TouchableOpacity, Image, ActivityIndicator,
-} from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-import { auth, db } from "../../service/firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
 import {
   ensureUserChallenges,
   fetchGlobalChallenges,
@@ -14,7 +21,7 @@ import {
   mergeChallenges,
   type ChallengeView,
 } from "../../service/challengesService";
-import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../../service/firebaseConfig";
 
 const C = {
   green: "#3BAB4F",
@@ -147,9 +154,12 @@ export default function RetosScreen() {
           <Text style={styles.headerLogo}>🌍</Text>
           <Text style={styles.headerTitle}>EcoLoop</Text>
         </View>
-        <TouchableOpacity style={styles.bellBtn}>
-          <Text style={styles.bellIcon}>🔔</Text>
-        </TouchableOpacity>
+        <TouchableOpacity
+        style={styles.bellBtn}
+        onPress={() => router.push("/notificaciones")}
+      >
+        <Text style={styles.bellIcon}>🔔</Text>
+      </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

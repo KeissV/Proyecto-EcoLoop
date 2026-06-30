@@ -1,21 +1,21 @@
-import React, { useCallback, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  StatusBar,
-  ScrollView,
-  TouchableOpacity,
   Image,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 
-import { auth, db } from "../../service/firebaseConfig";
 import { validateAndUnlockAchievements } from "../../service/achievementsService";
+import { auth, db } from "../../service/firebaseConfig";
 
 const C = {
   green: "#22C55E",
@@ -128,13 +128,18 @@ function readMetricValue(metrics: UserMetrics, condicionTipo: string) {
 }
 
 function Header() {
+  const router = useRouter();
+
   return (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
         <Text style={styles.headerLogo}>🌍</Text>
         <Text style={styles.headerTitle}>EcoLoop</Text>
       </View>
-      <TouchableOpacity style={styles.bellBtn}>
+      <TouchableOpacity
+        style={styles.bellBtn}
+        onPress={() => router.push("/notificaciones")}
+      >
         <Text style={styles.bellIcon}>🔔</Text>
       </TouchableOpacity>
     </View>
