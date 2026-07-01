@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { doc, getFirestore, setDoc } from "firebase/firestore";
+import { doc, getDoc, getFirestore, setDoc } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDGl0cgsIuzi7K53lLNZg_wKoX6anC7iqw",
@@ -558,6 +558,7 @@ const retos = [
     activo: true,
     destacado: true,
     orden: 1,
+    dia_desbloqueo: 0,
   },
   {
     id: "identifica-material",
@@ -581,6 +582,7 @@ const retos = [
     activo: true,
     destacado: true,
     orden: 2,
+    dia_desbloqueo: 0,
   },
   {
     id: "ecobrick",
@@ -604,6 +606,7 @@ const retos = [
     activo: true,
     destacado: false,
     orden: 3,
+    dia_desbloqueo: 2,
   },
   {
     id: "busca-tetrapack",
@@ -627,6 +630,7 @@ const retos = [
     activo: true,
     destacado: true,
     orden: 4,
+    dia_desbloqueo: 3,
   },
   {
     id: "identifica-peligroso",
@@ -650,6 +654,7 @@ const retos = [
     activo: true,
     destacado: false,
     orden: 5,
+    dia_desbloqueo: 3,
   },
   {
     id: "repaso-clasificacion",
@@ -673,6 +678,7 @@ const retos = [
     activo: true,
     destacado: false,
     orden: 6,
+    dia_desbloqueo: 4,
   },
   {
     id: "accion-comunidad",
@@ -696,6 +702,7 @@ const retos = [
     activo: true,
     destacado: false,
     orden: 7,
+    dia_desbloqueo: 5,
   },
   {
     id: "reto-vidrio-metal",
@@ -719,6 +726,176 @@ const retos = [
     activo: true,
     destacado: false,
     orden: 8,
+    dia_desbloqueo: 5,
+  },
+  // ── Retos nuevos ────────────────────────────────────────────────
+  {
+    id: "conoce-organico",
+    titulo: "Conoce los org\u00e1nicos",
+    descripcion: "Busca la c\u00e1scara de banana y aprende sobre residuos org\u00e1nicos.",
+    tipo: "aprendizaje",
+    puntos: 25,
+    tiempo_min: 3,
+    progreso_total: 1,
+    tag: "APRENDIZAJE",
+    tag_color: "#4A9EE0",
+    tag_bg: "#E8F4FF",
+    icono_local: "tab-search.jpeg",
+    ruta: "/reto-aprendizaje",
+    validacion_accion: "buscar_material_especifico",
+    estado_inicial: "disponible",
+    validacion_objetivo: 1,
+    validacion_materiales: ["cascara-banana"],
+    validacion_categoria: "",
+    validacion_categorias: [],
+    activo: true,
+    destacado: false,
+    orden: 9,
+    dia_desbloqueo: 1,
+  },
+  {
+    id: "explora-vidrio",
+    titulo: "Explora el vidrio",
+    descripcion: "Visita la categor\u00eda de vidrio y aprende c\u00f3mo reciclarlo.",
+    tipo: "aprendizaje",
+    puntos: 30,
+    tiempo_min: 5,
+    progreso_total: 1,
+    tag: "APRENDIZAJE",
+    tag_color: "#4A9EE0",
+    tag_bg: "#E8F4FF",
+    icono_local: "tab-search.jpeg",
+    ruta: "/reto-aprendizaje",
+    validacion_accion: "buscar_categoria",
+    estado_inicial: "disponible",
+    validacion_objetivo: 1,
+    validacion_materiales: [],
+    validacion_categoria: "vidrio",
+    validacion_categorias: [],
+    activo: true,
+    destacado: false,
+    orden: 10,
+    dia_desbloqueo: 1,
+  },
+  {
+    id: "recicla-papel",
+    titulo: "Recicla papel",
+    descripcion: "Busca el peri\u00f3dico en el buscador y aprende su disposici\u00f3n correcta.",
+    tipo: "aprendizaje",
+    puntos: 25,
+    tiempo_min: 3,
+    progreso_total: 1,
+    tag: "APRENDIZAJE",
+    tag_color: "#4A9EE0",
+    tag_bg: "#E8F4FF",
+    icono_local: "tab-search.jpeg",
+    ruta: "/reto-aprendizaje",
+    validacion_accion: "buscar_material_especifico",
+    estado_inicial: "disponible",
+    validacion_objetivo: 1,
+    validacion_materiales: ["periodico"],
+    validacion_categoria: "",
+    validacion_categorias: [],
+    activo: true,
+    destacado: false,
+    orden: 11,
+    dia_desbloqueo: 2,
+  },
+  {
+    id: "separa-5-residuos",
+    titulo: "Separa 5 residuos",
+    descripcion: "Clasifica correctamente 5 residuos distintos.",
+    tipo: "clasificacion",
+    puntos: 65,
+    tiempo_min: 15,
+    progreso_total: 5,
+    tag: "CLASIFICACI\u00d3N",
+    tag_color: "#3BAB4F",
+    tag_bg: "#E8F5E9",
+    icono_local: "recycle-icon.png",
+    ruta: "/reto-aprendizaje",
+    validacion_accion: "avance_manual",
+    estado_inicial: "disponible",
+    validacion_objetivo: 5,
+    validacion_materiales: [],
+    validacion_categoria: "",
+    validacion_categorias: [],
+    activo: true,
+    destacado: false,
+    orden: 12,
+    dia_desbloqueo: 4,
+  },
+  {
+    id: "explorador-3-materiales",
+    titulo: "Explorador de materiales",
+    descripcion: "Busca y consulta 3 materiales distintos en el buscador.",
+    tipo: "aprendizaje",
+    puntos: 75,
+    tiempo_min: 10,
+    progreso_total: 3,
+    tag: "DESAF\u00cdO",
+    tag_color: "#B45309",
+    tag_bg: "#FEF3C7",
+    icono_local: "tab-search.jpeg",
+    ruta: "/reto-aprendizaje",
+    validacion_accion: "buscar_materiales_distintos",
+    estado_inicial: "disponible",
+    validacion_objetivo: 3,
+    validacion_materiales: [],
+    validacion_categoria: "",
+    validacion_categorias: [],
+    activo: true,
+    destacado: true,
+    orden: 13,
+    dia_desbloqueo: 6,
+  },
+  {
+    id: "guia-metal",
+    titulo: "Gu\u00eda del metal",
+    descripcion: "Visita la categor\u00eda de metal y conoce c\u00f3mo separar latas y piezas.",
+    tipo: "aprendizaje",
+    puntos: 40,
+    tiempo_min: 5,
+    progreso_total: 1,
+    tag: "APRENDIZAJE",
+    tag_color: "#4A9EE0",
+    tag_bg: "#E8F4FF",
+    icono_local: "tab-search.jpeg",
+    ruta: "/reto-aprendizaje",
+    validacion_accion: "buscar_categoria",
+    estado_inicial: "disponible",
+    validacion_objetivo: 1,
+    validacion_materiales: [],
+    validacion_categoria: "metal",
+    validacion_categorias: [],
+    activo: true,
+    destacado: false,
+    orden: 14,
+    dia_desbloqueo: 6,
+  },
+  {
+    id: "eco-compromiso-semanal",
+    titulo: "Eco compromiso semanal",
+    descripcion: "Registra 5 acciones ecol\u00f3gicas durante la semana.",
+    tipo: "social",
+    puntos: 100,
+    tiempo_min: 0,
+    progreso_total: 5,
+    tag: "SOCIAL",
+    tag_color: "#059669",
+    tag_bg: "#D1FAE5",
+    icono_local: "reto-social.jpeg",
+    ruta: "/reto-aprendizaje",
+    validacion_accion: "avance_manual",
+    estado_inicial: "disponible",
+    validacion_objetivo: 5,
+    validacion_materiales: [],
+    validacion_categoria: "",
+    validacion_categorias: [],
+    activo: true,
+    destacado: false,
+    orden: 15,
+    dia_desbloqueo: 7,
   },
 ];
 
@@ -893,17 +1070,33 @@ const tips = [
   },
 ];
 
-async function seedCollection(collectionName, docs) {
+async function seedCollection(collectionName, docs, protectedFields = []) {
   for (const row of docs) {
-    await setDoc(doc(db, collectionName, row.id), row, { merge: true });
+    const ref = doc(db, collectionName, row.id);
+    if (protectedFields.length === 0) {
+      await setDoc(ref, row, { merge: true });
+    } else {
+      // Si el documento ya existe, no sobreescribir los campos protegidos
+      // (pueden haber sido modificados manualmente en la consola de Firebase).
+      const existing = await getDoc(ref);
+      const updateData = { ...row };
+      if (existing.exists()) {
+        for (const field of protectedFields) {
+          delete updateData[field];
+        }
+      }
+      await setDoc(ref, updateData, { merge: true });
+    }
   }
   console.log(`${collectionName}: ${docs.length} documentos listos`);
 }
 
 async function run() {
   await seedCollection("categorias_residuos", categorias);
-  await seedCollection("residuos", residuos);
-  await seedCollection("retos", retos);
+  // imagen_url esta protegida: si fue cambiada manualmente en Firebase, no se sobreescribe.
+  await seedCollection("residuos", residuos, ["imagen_url"]);
+  // puntos esta protegido: si fue cambiado manualmente en Firebase, no se sobreescribe.
+  await seedCollection("retos", retos, ["puntos"]);
   await seedCollection("logros", logros);
   await seedCollection("tips_ecologicos", tips);
 

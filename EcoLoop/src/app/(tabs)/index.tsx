@@ -1,12 +1,12 @@
-import React from "react";
+import { useRouter } from "expo-router";
 import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  StatusBar,
   SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const C = {
@@ -24,6 +24,7 @@ const C = {
   border: "#E5E5E5",
 };
 
+const router = useRouter();
 const CHALLENGES = [
   {
     id: 1,
@@ -55,13 +56,18 @@ const CHALLENGES = [
 ];
 
 function Header() {
+  const router = useRouter();
+
   return (
     <View style={styles.header}>
       <View style={styles.headerLeft}>
         <Text style={styles.headerLogo}>🌍</Text>
         <Text style={styles.headerTitle}>EcoLoop</Text>
       </View>
-      <TouchableOpacity style={styles.bellBtn}>
+      <TouchableOpacity
+        style={styles.bellBtn}
+        onPress={() => router.push("../notificaciones")}
+      >
         <Text style={styles.bellIcon}>🔔</Text>
       </TouchableOpacity>
     </View>
@@ -101,15 +107,15 @@ function StatsRow() {
 
 function QuickActions() {
   const items = [
-    { icon: "🔍", label: "Buscar", color: C.blue },
-    { icon: "🎯", label: "Reto", color: C.tealIcon },
-    { icon: "🏆", label: "Logros", color: C.yellow },
-    { icon: "🌱", label: "Impacto", color: C.green },
-  ];
+      { icon: "🔍", label: "Buscar", color: C.blue, ruta: null },
+      { icon: "🎯", label: "Reto", color: C.tealIcon, ruta: null },
+      { icon: "🏆", label: "Logros", color: C.yellow, ruta: null },
+      { icon: "🌱", label: "Impacto", color: C.green, ruta: "/(tabs)/impacto" },
+    ];
   return (
     <View style={styles.quickRow}>
       {items.map((item) => (
-        <TouchableOpacity key={item.label} style={styles.quickItem}>
+        <TouchableOpacity key={item.label} style={styles.quickItem} onPress={() => item.ruta && router.push(item.ruta as any)}>
           <View style={[styles.quickCircle, { backgroundColor: item.color + "22" }]}>
             <Text style={styles.quickIcon}>{item.icon}</Text>
           </View>
@@ -207,7 +213,6 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Tip */}
         <TipCard />
 
         <View style={{ height: 16 }} />

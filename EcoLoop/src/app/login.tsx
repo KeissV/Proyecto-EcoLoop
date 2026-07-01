@@ -68,7 +68,13 @@ export default function Login() {
           foto_url: user.photoURL ?? null,
           puntos_totales: 0,
           nivel: "Principiante",
+          nivel_numero: 0,
           co2_ahorrado_kg: 0,
+          retos_completados: 0,
+          objetos_reciclados: 0,
+          materiales_consultados: 0,
+          lecciones_completadas: 0,
+          racha_dias: 0,
           fecha_registro: serverTimestamp(),
         });
       }

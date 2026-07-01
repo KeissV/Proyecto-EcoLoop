@@ -16,11 +16,14 @@ import { auth } from "../../../service/firebaseConfig";
 import {
   addManualProgress,
   completeChallenge,
+  canonicalCategoryKey,
   getChallengeById,
   getUserChallenge,
+  hasCategoryRequirement,
   markChallengeInProgress,
   type ChallengeGlobal,
 } from "../../../service/challengesService";
+import { validateAndUnlockAchievements } from "../../../service/achievementsService";
 
 const C = {
   green: "#2FC35B",
@@ -103,6 +106,26 @@ function buildSteps(challenge: ChallengeGlobal): Step[] {
     ];
   }
 
+  if (hasCategoryRequirement(challenge)) {
+    const hasSpecificCategory =
+      challenge.validacion_categorias.length > 0 || challenge.validacion_categoria.trim().length > 0;
+    const categories = challenge.validacion_categorias.length
+      ? challenge.validacion_categorias.join(", ")
+      : challenge.validacion_categoria;
+
+    return [
+      { id: "1", title: "Abre el buscador", description: "Accede a la seccion Buscar desde el menu inferior." },
+      {
+        id: "2",
+        title: hasSpecificCategory ? "Revisa la categoria" : "Elige una categoria",
+        description: hasSpecificCategory
+          ? `Entra a la guia de la categoria: ${categories}.`
+          : "Selecciona cualquier categoria de residuos para repasar su clasificacion.",
+      },
+      { id: "3", title: "Confirma la revision", description: "El reto se valida automaticamente al abrir esa categoria." },
+    ];
+  }
+
   if (challenge.validacion_accion === "avance_manual") {
     return [
       { id: "1", title: "Realiza la actividad", description: challenge.descripcion },
@@ -122,7 +145,11 @@ function buildSteps(challenge: ChallengeGlobal): Step[] {
   ];
 }
 
-function actionLabel(challenge: ChallengeGlobal) {
+function actionLabel(challenge: ChallengeGlobal, completed: boolean) {
+  if (completed) {
+    return "Reto completado";
+  }
+
   if (
     challenge.validacion_accion === "buscar_materiales_distintos" ||
     challenge.validacion_accion === "buscar_material_especifico" ||
@@ -130,6 +157,12 @@ function actionLabel(challenge: ChallengeGlobal) {
     challenge.validacion_accion === "buscar_categorias_requeridas"
   ) {
     return "Ir al buscador";
+  }
+
+  if (hasCategoryRequirement(challenge)) {
+    const hasSpecificCategory =
+      challenge.validacion_categorias.length > 0 || challenge.validacion_categoria.trim().length > 0;
+    return hasSpecificCategory ? "Revisar categoria" : "Ir al buscador";
   }
 
   if (challenge.validacion_accion === "avance_manual") {
@@ -226,13 +259,49 @@ export default function RetoDinamicoScreen() {
         return;
       }
 
+      if (hasCategoryRequirement(challenge)) {
+        const hasSpecificCategory =
+          challenge.validacion_categorias.length > 0 || challenge.validacion_categoria.trim().length > 0;
+
+        if (!hasSpecificCategory || challenge.validacion_categorias.length > 1) {
+          router.push({
+            pathname: "/buscar",
+            params: { retoId: id },
+          });
+          return;
+        }
+
+        const targetCategory = challenge.validacion_categorias[0] || challenge.validacion_categoria;
+        router.push({
+          pathname: "/categoria/[slug]",
+          params: { slug: canonicalCategoryKey(targetCategory), retoId: id },
+        });
+        return;
+      }
+
       if (challenge.validacion_accion === "avance_manual") {
         const result = await addManualProgress(uid, id, 1);
 
         if (result.completed) {
-          router.push({
+          let achievementTitle: string | undefined;
+          let achievementDescription: string | undefined;
+          try {
+            const unlocked = await validateAndUnlockAchievements(uid);
+            if (unlocked.length > 0) {
+              achievementTitle = unlocked[0].title;
+              achievementDescription = unlocked[0].description;
+            }
+          } catch {}
+          router.replace({
             pathname: "/reto-completado",
-            params: { retoId: id, points: `${result.challenge.puntos}` },
+            params: {
+              retoId: id,
+              points: `${result.challenge.puntos}`,
+              levelUp: result.levelUp ? "1" : undefined,
+              levelName: result.levelName || undefined,
+              achievementTitle,
+              achievementDescription,
+            },
           });
           return;
         }
@@ -247,9 +316,25 @@ export default function RetoDinamicoScreen() {
       }
 
       const completed = await completeChallenge(uid, id);
-      router.push({
+      let achievementTitle: string | undefined;
+      let achievementDescription: string | undefined;
+      try {
+        const unlocked = await validateAndUnlockAchievements(uid);
+        if (unlocked.length > 0) {
+          achievementTitle = unlocked[0].title;
+          achievementDescription = unlocked[0].description;
+        }
+      } catch {}
+      router.replace({
         pathname: "/reto-completado",
-        params: { retoId: id, points: `${completed.puntos}` },
+        params: {
+          retoId: id,
+          points: `${completed.puntos}`,
+          levelUp: completed.levelUp ? "1" : undefined,
+          levelName: completed.levelName || undefined,
+          achievementTitle,
+          achievementDescription,
+        },
       });
     } finally {
       setSaving(false);
@@ -336,8 +421,16 @@ export default function RetoDinamicoScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.ctaButton} onPress={onPrimaryAction} disabled={saving}>
-          {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.ctaText}>{actionLabel(challenge)}</Text>}
+        <TouchableOpacity
+          style={[styles.ctaButton, progress.completed && styles.ctaButtonDisabled]}
+          onPress={onPrimaryAction}
+          disabled={saving || progress.completed}
+        >
+          {saving ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.ctaText}>{actionLabel(challenge, progress.completed)}</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -557,6 +650,9 @@ const styles = StyleSheet.create({
     height: 48,
     alignItems: "center",
     justifyContent: "center",
+  },
+  ctaButtonDisabled: {
+    backgroundColor: C.muted,
   },
   ctaText: {
     color: C.white,

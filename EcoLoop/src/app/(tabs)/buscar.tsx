@@ -268,7 +268,7 @@ export default function BuscarScreen() {
           rewardPoints = `${first.puntos}`;
         }
 
-        const unlocked = rewardRetoId ? [] : await validateAndUnlockAchievements(uid);
+        const unlocked = await validateAndUnlockAchievements(uid);
         if (unlocked.length > 0) {
           const first = unlocked[0];
           rewardTitle = first.title;
@@ -410,7 +410,7 @@ export default function BuscarScreen() {
               <TouchableOpacity
                 key={cat.label}
                 style={styles.categoryCard}
-                onPress={() => router.push({ pathname: "/categoria/[slug]", params: { slug: slugifyCategory(cat.label) } })}
+                onPress={() => router.push({ pathname: "/categoria/[slug]", params: { slug: slugifyCategory(cat.label), retoId } })}
               >
                 <Image source={meta.icon} style={styles.categoryIconImage} resizeMode="contain" />
                 <Text style={styles.categoryLabel}>{cat.label}</Text>

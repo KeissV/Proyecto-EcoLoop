@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   Image,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { auth } from "../../service/firebaseConfig";
-import { validateAndUnlockAchievements } from "../../service/achievementsService";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../../service/firebaseConfig";
+import { getLevelForPoints } from "../../service/levelService";
 
 const C = {
   green: "#22C55E",
@@ -26,35 +27,65 @@ const C = {
 
 export default function RetoCompletadoScreen() {
   const router = useRouter();
-  const { points } = useLocalSearchParams<{ points?: string }>();
+  const { points, levelUp, achievementTitle, achievementDescription } = useLocalSearchParams<{
+    points?: string;
+    levelUp?: string;
+    levelName?: string;
+    achievementTitle?: string;
+    achievementDescription?: string;
+  }>();
   const rewardPoints = points && !Number.isNaN(Number(points)) ? Number(points) : 50;
+  const didLevelUp = levelUp === "1";
+  // El nivel (nombre + numero) se calcula siempre desde los puntos guardados en
+  // Firestore, para que "Nivel 1", "Nivel 2", etc. sea consistente sin importar
+  // desde que pantalla se llego aqui (reto manual, reto de busqueda, categoria...).
+  const [levelInfo, setLevelInfo] = useState<{ number: number; name: string } | null>(null);
+  // El logro solo viene como param; esta pantalla NO verifica logros por su cuenta.
+  const pendingAchievement = achievementTitle
+    ? { title: achievementTitle, description: achievementDescription ?? "" }
+    : null;
 
   useEffect(() => {
     let active = true;
 
-    async function validateAchievements() {
+    async function loadCurrentLevel() {
       const uid = auth.currentUser?.uid;
       if (!uid) {
         return;
       }
 
-      const unlocked = await validateAndUnlockAchievements(uid);
+      try {
+        const userSnap = await getDoc(doc(db, "usuarios", uid));
+        const userPoints =
+          userSnap.exists() && typeof userSnap.data().puntos_totales === "number" ? userSnap.data().puntos_totales : 0;
 
-      if (active && unlocked.length > 0) {
-        const first = unlocked[0];
-        router.replace({
-          pathname: "/medalla-conseguida",
-          params: { title: first.title, description: first.description, next: "/retos" },
-        });
+        if (active) {
+          const level = getLevelForPoints(userPoints);
+          setLevelInfo({ number: level.level, name: level.name });
+        }
+      } catch {
+        // Si falla, se deja sin nivel; no interrumpe la pantalla de recompensa.
       }
     }
 
-    validateAchievements();
+    loadCurrentLevel();
 
     return () => {
       active = false;
     };
-  }, [router]);
+  }, []);
+
+  function handleContinue() {
+    if (pendingAchievement) {
+      router.replace({
+        pathname: "/medalla-conseguida",
+        params: { title: pendingAchievement.title, description: pendingAchievement.description, next: "/retos" },
+      });
+      return;
+    }
+
+    router.replace("/retos");
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -68,7 +99,7 @@ export default function RetoCompletadoScreen() {
 
           <Text style={styles.title}>¡Lo lograste!</Text>
           <Text style={styles.description}>
-            Has completado tu reto de la semana.
+            Has completado un reto con éxito.
             {"\n"}
             Cada pequeña acción cuenta para un
             {"\n"}
@@ -96,13 +127,13 @@ export default function RetoCompletadoScreen() {
                   resizeMode="contain"
                 />
               </View>
-              <Text style={styles.rewardName}>Defensor</Text>
-              <Text style={styles.rewardLabel}>Nuevo Nivel</Text>
+              <Text style={styles.rewardName}>{levelInfo ? `Nivel ${levelInfo.number} · ${levelInfo.name}` : "..."}</Text>
+              <Text style={styles.rewardLabel}>{didLevelUp ? "Nuevo Nivel" : "Nivel actual"}</Text>
             </View>
           </View>
 
-          <TouchableOpacity style={styles.ctaButton} onPress={() => router.replace("/retos")}>
-            <Text style={styles.ctaText}>Continuar →</Text>
+         <TouchableOpacity style={styles.ctaButton} onPress={handleContinue}>
+              <Text style={styles.ctaText}>Continuar →</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -201,10 +232,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   rewardName: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "800",
     color: C.darkGreen,
     marginBottom: 2,
+    textAlign: "center",
   },
   rewardLabel: {
     fontSize: 13,

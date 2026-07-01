@@ -3,8 +3,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  runTransaction,
   serverTimestamp,
-  setDoc,
 } from "firebase/firestore";
 
 import { db } from "./firebaseConfig";
@@ -102,19 +102,10 @@ async function fetchMetrics(uid: string): Promise<UserMetrics> {
 }
 
 export async function validateAndUnlockAchievements(uid: string) {
-  const [metrics, globalSnap, userSnap] = await Promise.all([
+  const [metrics, globalSnap] = await Promise.all([
     fetchMetrics(uid),
     getDocs(collection(db, "logros")),
-    getDocs(collection(db, "usuarios", uid, "logros_usuario")),
   ]);
-
-  const unlockedIds = new Set<string>();
-  userSnap.forEach((item) => {
-    const data = item.data();
-    if (data.desbloqueado === true) {
-      unlockedIds.add(item.id);
-    }
-  });
 
   const globalAchievements: AchievementGlobal[] = [];
   globalSnap.forEach((item) => {
@@ -126,32 +117,53 @@ export async function validateAndUnlockAchievements(uid: string) {
 
   globalAchievements.sort((a, b) => a.order - b.order);
 
+  // Solo nos interesan los logros cuya condicion ya se cumple con las metricas actuales.
+  const candidates = globalAchievements.filter((achievement) => {
+    const value = readMetricValue(metrics, achievement.conditionType);
+    return value >= achievement.conditionValue;
+  });
+
   const newUnlocked: AchievementUnlocked[] = [];
 
-  for (const achievement of globalAchievements) {
-    const value = readMetricValue(metrics, achievement.conditionType);
-    const unlocked = value >= achievement.conditionValue;
+  for (const achievement of candidates) {
+    const achievementRef = doc(db, "usuarios", uid, "logros_usuario", achievement.id);
 
-    if (!unlocked || unlockedIds.has(achievement.id)) {
-      continue;
-    }
+    // Esta funcion se llama desde varias pantallas (buscar, retos, logros...) y puede
+    // dispararse casi al mismo tiempo mas de una vez. Antes se hacia un simple
+    // "leer todos los logros ya desbloqueados" y luego "escribir" por separado, lo que
+    // permitia que dos llamadas casi simultaneas leyeran el logro como "todavia no
+    // desbloqueado" y las dos lo entregaran de nuevo (por eso la primera medalla podia
+    // repetirse). Usando una transaccion, Firestore garantiza que, sin importar cuantas
+    // veces o que tan seguido se llame esta funcion, cada logro solo se pueda marcar
+    // como "recien desbloqueado" una unica vez para siempre.
+    const wasJustUnlocked = await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(achievementRef);
 
-    await setDoc(
-      doc(db, "usuarios", uid, "logros_usuario", achievement.id),
-      {
-        logro_id: achievement.id,
-        desbloqueado: true,
-        fecha_desbloqueo: serverTimestamp(),
-      },
-      { merge: true }
-    );
+      if (snap.exists() && snap.data().desbloqueado === true) {
+        return false;
+      }
 
-    newUnlocked.push({
-      id: achievement.id,
-      title: achievement.title,
-      description: achievement.description,
-      type: achievement.type,
+      transaction.set(
+        achievementRef,
+        {
+          logro_id: achievement.id,
+          desbloqueado: true,
+          fecha_desbloqueo: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      return true;
     });
+
+    if (wasJustUnlocked) {
+      newUnlocked.push({
+        id: achievement.id,
+        title: achievement.title,
+        description: achievement.description,
+        type: achievement.type,
+      });
+    }
   }
 
   return newUnlocked;

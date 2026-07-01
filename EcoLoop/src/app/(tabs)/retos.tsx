@@ -11,10 +11,13 @@ import {
   ensureUserChallenges,
   fetchGlobalChallenges,
   fetchUserChallenges,
+  getUserActiveDays,
   mergeChallenges,
   type ChallengeView,
 } from "../../service/challengesService";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { getLevelForPoints } from "../../service/levelService";
+import { registerDailyActivity } from "../../service/streakService";
 
 const C = {
   green: "#3BAB4F",
@@ -83,10 +86,14 @@ function RetoCard({ reto, onPress }: { reto: ChallengeView; onPress?: () => void
 
 export default function RetosScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<Tab>("En curso");
+  const [activeTab, setActiveTab] = useState<Tab>("Disponibles");
   const [retos, setRetos] = useState<ChallengeView[]>([]);
   const [streakDays, setStreakDays] = useState(0);
+  const [levelInfo, setLevelInfo] = useState<{ number: number; name: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  // Retos bloqueados: cuantos y en cuantos dias se desbloquean los proximos
+  const [nextUnlockInfo, setNextUnlockInfo] = useState<{ count: number; daysUntil: number } | null>(null);
+  const [bonusEarned, setBonusEarned] = useState(false);
 
   const loadData = useCallback(async () => {
     const uid = auth.currentUser?.uid;
@@ -94,6 +101,7 @@ export default function RetosScreen() {
     if (!uid) {
       setRetos([]);
       setStreakDays(0);
+      setLevelInfo(null);
       setLoading(false);
       return;
     }
@@ -101,17 +109,70 @@ export default function RetosScreen() {
     try {
       setLoading(true);
       const globalChallenges = await fetchGlobalChallenges();
-      await ensureUserChallenges(uid, globalChallenges);
+
+      // Desbloqueo diario: filtrar segun dias activos del usuario
+      const daysActive = await getUserActiveDays(uid);
+      const available = globalChallenges.filter((c) => c.dia_desbloqueo <= daysActive);
+      const locked = globalChallenges.filter((c) => c.dia_desbloqueo > daysActive);
+
+      if (locked.length > 0) {
+        const minDay = Math.min(...locked.map((c) => c.dia_desbloqueo));
+        setNextUnlockInfo({ count: locked.filter((c) => c.dia_desbloqueo === minDay).length, daysUntil: minDay - daysActive });
+      } else {
+        setNextUnlockInfo(null);
+      }
+
+      await ensureUserChallenges(uid, available);
       const userChallenges = await fetchUserChallenges(uid);
-      const merged = mergeChallenges(globalChallenges, userChallenges);
+      const merged = mergeChallenges(available, userChallenges);
 
       const userSnap = await getDoc(doc(db, "usuarios", uid));
-      const streak = userSnap.exists() && typeof userSnap.data().racha_dias === "number"
+      const points =
+        userSnap.exists() && typeof userSnap.data().puntos_totales === "number"
+          ? userSnap.data().puntos_totales
+          : 0;
+
+      // Registra la actividad de hoy y devuelve la racha ya recalculada
+      // (esto es lo que hace que la racha sea funcional dia a dia).
+      let streak = userSnap.exists() && typeof userSnap.data().racha_dias === "number"
         ? userSnap.data().racha_dias
         : 0;
 
+      try {
+        const streakResult = await registerDailyActivity(uid);
+        streak = streakResult.racha_dias;
+      } catch {
+        // Si falla la escritura de racha, seguimos mostrando el ultimo valor conocido.
+      }
+
       setRetos(merged);
       setStreakDays(streak);
+      const level = getLevelForPoints(points);
+      setLevelInfo({ number: level.level, name: level.name });
+
+      // Bonus: si todos los retos disponibles estan completados, otorgar 50 pts una vez por dia
+      const allDone = merged.length > 0 && merged.every((r) => r.done);
+      const today = new Date().toISOString().split("T")[0];
+      if (allDone) {
+        const userData = userSnap.exists() ? userSnap.data() : {};
+        if (userData.ultima_fecha_bonus === today) {
+          setBonusEarned(true); // Ya se otorgo hoy
+        } else {
+          try {
+            const currentPoints = typeof userData.puntos_totales === "number" ? userData.puntos_totales : 0;
+            await setDoc(
+              doc(db, "usuarios", uid),
+              { puntos_totales: currentPoints + 50, ultima_fecha_bonus: today },
+              { merge: true }
+            );
+            setBonusEarned(true);
+          } catch {
+            // Si falla el bonus, no interrumpir la vista
+          }
+        }
+      } else {
+        setBonusEarned(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -167,6 +228,14 @@ export default function RetosScreen() {
           <Image source={require("../../../assets/images/icons/icons8-hoja-48.png")} style={styles.rachaWatermark} resizeMode="contain" />
         </View>
 
+        {levelInfo ? (
+          <View style={styles.levelCard}>
+            <Text style={styles.levelText}>
+              Nivel {levelInfo.number} · {levelInfo.name}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Tabs */}
         <View style={styles.tabsRow}>
           {(["En curso", "Disponibles", "Terminados"] as Tab[]).map((t) => (
@@ -211,16 +280,39 @@ export default function RetosScreen() {
           </View>
         ) : null}
 
+        {/* Proximos retos bloqueados */}
+        {!loading && nextUnlockInfo ? (
+          <View style={styles.nextUnlockCard}>
+            <Text style={styles.nextUnlockIcon}>🔒</Text>
+            <View style={styles.nextUnlockText}>
+              <Text style={styles.nextUnlockTitle}>
+                {nextUnlockInfo.count} reto{nextUnlockInfo.count !== 1 ? "s" : ""} nuevo{nextUnlockInfo.count !== 1 ? "s" : ""} próximamente
+              </Text>
+              <Text style={styles.nextUnlockSub}>
+                {nextUnlockInfo.daysUntil === 1
+                  ? "Se desbloquea mañana"
+                  : `Se desbloquea en ${nextUnlockInfo.daysUntil} días`}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {/* Reto Bonus */}
-        <View style={styles.bonusCard}>
+        <View style={[styles.bonusCard, bonusEarned && styles.bonusCardEarned]}>
           <View style={styles.bonusHeader}>
             <Image source={require("../../../assets/images/icons/icons8-estrellas-24.png")} style={styles.bonusStar} resizeMode="contain" />
-            <Text style={styles.bonusTag}>RETO BONUS</Text>
+            <Text style={styles.bonusTag}>{bonusEarned ? "¡BONUS GANADO!" : "RETO BONUS"}</Text>
           </View>
-          <Text style={styles.bonusTitle}>¡Completa todos los retos!</Text>
-          <Text style={styles.bonusDesc}>Gana 50 puntos extra al completar todos los retos activos del día.</Text>
+          <Text style={styles.bonusTitle}>
+            {bonusEarned ? "¡Completaste todos los retos!" : "¡Completa todos los retos!"}
+          </Text>
+          <Text style={styles.bonusDesc}>
+            {bonusEarned
+              ? "Ya obtuviste los 50 puntos extra de hoy. ¡Vuelve mañana para nuevos retos!"
+              : "Gana 50 puntos extra al completar todos los retos activos del día."}
+          </Text>
           <View style={styles.bonusFooter}>
-            <Text style={styles.bonusBtnText}>Progreso</Text>
+            <Text style={styles.bonusBtnText}>{bonusEarned ? "✅ Ganado" : "Progreso"}</Text>
             <Text style={styles.bonusProgress}>{doneCount}/{retos.length} completados</Text>
           </View>
         </View>
@@ -275,6 +367,22 @@ const styles = StyleSheet.create({
     right: -6,
     top: -4,
     tintColor: "#FFFFFF",
+  },
+
+  levelCard: {
+    backgroundColor: C.white,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+  },
+  levelText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.darkGreen,
   },
 
   tabsRow: {
@@ -336,6 +444,22 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
+  nextUnlockCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    gap: 12,
+  },
+  nextUnlockIcon: { fontSize: 24 },
+  nextUnlockText: { flex: 1 },
+  nextUnlockTitle: { fontSize: 14, fontWeight: "700", color: C.darkGreen },
+  nextUnlockSub: { fontSize: 12, color: C.muted, marginTop: 2 },
+
   progressRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 },
   progressTrack: {
     flex: 1, height: 8, borderRadius: 4, backgroundColor: "#E5E7EB",
@@ -349,6 +473,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     marginTop: 4,
+  },
+  bonusCardEarned: {
+    backgroundColor: "#1E7D3A",
   },
   bonusHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
   bonusStar: { width: 18, height: 18, tintColor: "#F5C518" },

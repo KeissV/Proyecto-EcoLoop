@@ -66,10 +66,12 @@ function resolveImageSource(item: WasteDetail, remoteFailed: boolean) {
 
 export default function ResiduoDetalleScreen() {
   const router = useRouter();
-  const { id, rewardRetoId, rewardPoints, rewardTitle, rewardDescription } = useLocalSearchParams<{
+  const { id, rewardRetoId, rewardPoints, rewardLevelUp, rewardLevelName, rewardTitle, rewardDescription } = useLocalSearchParams<{
     id?: string;
     rewardRetoId?: string;
     rewardPoints?: string;
+    rewardLevelUp?: string;
+    rewardLevelName?: string;
     rewardTitle?: string;
     rewardDescription?: string;
   }>();
@@ -153,10 +155,16 @@ export default function ResiduoDetalleScreen() {
         {rewardRetoId ? (
           <View style={styles.rewardNoticeCard}>
             <View style={styles.rewardNoticeHeader}>
-              <Text style={styles.rewardNoticeEmoji}>✅</Text>
-              <Text style={styles.rewardNoticeTitle}>Reto completado</Text>
+              <Text style={styles.rewardNoticeEmoji}>{rewardTitle ? "🎉" : "✅"}</Text>
+              <Text style={styles.rewardNoticeTitle}>
+                {rewardTitle ? "Reto cumplido y medalla conseguida" : "Reto completado"}
+              </Text>
             </View>
-            <Text style={styles.rewardNoticeDescription}>Excelente, validar este material completo uno de tus retos activos.</Text>
+            <Text style={styles.rewardNoticeDescription}>
+              {rewardTitle
+                ? "Completaste uno de tus retos activos y ademas desbloqueaste una nueva medalla."
+                : "Excelente, validar este material completo uno de tus retos activos."}
+            </Text>
             <TouchableOpacity
               style={styles.rewardNoticeButton}
               onPress={() =>
@@ -165,6 +173,10 @@ export default function ResiduoDetalleScreen() {
                   params: {
                     retoId: rewardRetoId,
                     points: rewardPoints ?? "0",
+                    levelUp: rewardLevelUp ?? undefined,
+                    levelName: rewardLevelName ?? undefined,
+                    achievementTitle: rewardTitle ?? undefined,
+                    achievementDescription: rewardDescription ?? undefined,
                   },
                 })
               }
@@ -177,7 +189,7 @@ export default function ResiduoDetalleScreen() {
           <View style={styles.rewardNoticeCard}>
             <View style={styles.rewardNoticeHeader}>
               <Text style={styles.rewardNoticeEmoji}>🏅</Text>
-              <Text style={styles.rewardNoticeTitle}>Medalla desbloqueada</Text>
+              <Text style={styles.rewardNoticeTitle}>Conseguiste una medalla</Text>
             </View>
             <Text style={styles.rewardNoticeDescription}>Ya ganaste una nueva medalla por tu progreso. Puedes verla ahora.</Text>
             <TouchableOpacity
@@ -188,12 +200,12 @@ export default function ResiduoDetalleScreen() {
                   params: {
                     title: rewardTitle,
                     description: rewardDescription,
-                    next: "/logros",
+                    next: "/buscar",
                   },
                 })
               }
             >
-              <Text style={styles.rewardNoticeButtonText}>Ver medalla</Text>
+              <Text style={styles.rewardNoticeButtonText}>Reclamar recompensa</Text>
               <Text style={styles.rewardNoticeButtonArrow}>→</Text>
             </TouchableOpacity>
           </View>
@@ -340,9 +352,6 @@ const styles = StyleSheet.create({
   },
   rewardNoticeEmoji: {
     fontSize: 18,
-  },
-  rewardNoticeCard: {
-    display: "none",
   },
   rewardNoticeTitle: {
     fontSize: 16,
