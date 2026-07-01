@@ -359,11 +359,12 @@ const styles = StyleSheet.create({
   headerLogo: {
     fontSize: 22,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: C.green,
-  },
+  headerTitle: { 
+  fontSize: 18, 
+  fontWeight: "700", 
+  color: "#1a6027",
+  fontFamily: "serif",
+},
   bellBtn: {
     padding: 4,
   },

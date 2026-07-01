@@ -253,7 +253,12 @@ const styles = StyleSheet.create({
   },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
   headerLogo: { fontSize: 22 },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: C.darkGreen },
+  headerTitle: { 
+  fontSize: 18, 
+  fontWeight: "700", 
+  color: "#1a6027",
+  fontFamily: "serif",
+},
   bellBtn: { padding: 4 },
   bellIcon: { fontSize: 20 },
   content: { padding: 14, paddingBottom: 28 },

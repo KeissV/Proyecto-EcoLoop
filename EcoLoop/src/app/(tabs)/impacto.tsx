@@ -9,8 +9,9 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "../../service/firebaseConfig";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "../../service/firebaseConfig";
+import { obtenerImpacto, ImpactoData } from "../../service/impactoService";
 
 const GREEN = "#3BAB4F";
 const GREEN_LIGHT = "#E8F5E9";
@@ -20,13 +21,6 @@ const BLUE_LIGHT = "#EAF4FB";
 const BLUE = "#3B8FD4";
 const YELLOW_LIGHT = "#FEFCE8";
 
-type ImpactoData = {
-  residuos_reciclados_kg: number;
-  agua_preservada_l: number;
-  energia_ahorrada_kwh: number;
-  arboles_equivalentes: number;
-};
-
 export default function MiImpacto() {
   const router = useRouter();
   const [datos, setDatos] = useState<ImpactoData | null>(null);
@@ -34,34 +28,28 @@ export default function MiImpacto() {
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
-    const cargarDatos = async () => {
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
 
       try {
-        const impactoSnap = await getDoc(doc(db, "impacto", uid));
-        if (impactoSnap.exists()) {
-          console.log("datos impacto:", impactoSnap.data());
-          setDatos(impactoSnap.data() as ImpactoData);
-        }
-
-        const usuarioSnap = await getDoc(doc(db, "usuarios", uid));
-        if (usuarioSnap.exists()) {
-          setCo2(usuarioSnap.data().co2_ahorrado_kg ?? 0);
-        }
+        const { impacto, co2_ahorrado_kg } = await obtenerImpacto(user.uid);
+        setDatos(impacto);
+        setCo2(co2_ahorrado_kg);
       } catch (error) {
         console.error("Error cargando impacto:", error);
       } finally {
         setCargando(false);
       }
-    };
+    });
 
-    cargarDatos();
+    return () => unsub();
   }, []);
 
-  const progreso = datos ? (datos.arboles_equivalentes % 1 === 0 
-  ? (datos.arboles_equivalentes % 5) / 5 
-  : datos.arboles_equivalentes / 5) : 0;
+  const progreso = datos
+    ? (datos.arboles_equivalentes % 1 === 0
+      ? (datos.arboles_equivalentes % 5) / 5
+      : datos.arboles_equivalentes / 5)
+    : 0;
 
   if (cargando) {
     return (
@@ -101,10 +89,10 @@ export default function MiImpacto() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.arbolesTitle}>
-                Has salvado el equivalente a {datos?.arboles_equivalentes ?? 0} arboles
+                Has salvado el equivalente a {datos?.arboles_equivalentes ?? 0} árboles
               </Text>
               <Text style={styles.arbolesHint}>
-                Sigue asi para plantar tu proximo arbol virtual!
+                ¡Sigue así para plantar tu próximo árbol virtual!
               </Text>
               <View style={styles.progressBar}>
                 <View style={[styles.progressFill, { width: `${progreso * 100}%` as any }]} />
@@ -127,7 +115,7 @@ export default function MiImpacto() {
           <View style={[styles.statCard, { backgroundColor: YELLOW_LIGHT }]}>
             <Ionicons name="flash-outline" size={28} color="#D4A017" />
             <Text style={[styles.statValue, { color: "#D4A017" }]}>{datos?.energia_ahorrada_kwh ?? 0} kWh</Text>
-            <Text style={styles.statLabel}>Energia Ahorrada</Text>
+            <Text style={styles.statLabel}>Energía Ahorrada</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: GREEN_LIGHT }]}>
             <Ionicons name="bulb-outline" size={28} color={GREEN} />
@@ -138,13 +126,12 @@ export default function MiImpacto() {
 
         <TouchableOpacity style={styles.shareButton}>
           <Ionicons name="share-outline" size={18} color="#fff" />
-          <Text style={styles.shareText}>Compartir Impacto!</Text>
+          <Text style={styles.shareText}>¡Compartir Impacto!</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
   );
 }
-
 
 const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: "#F7F7F7" },
@@ -154,7 +141,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 56, paddingBottom: 12,
     backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#EEE",
   },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: GREEN },
+headerLeft: { width: 40 },
+headerTitle: {
+  fontSize: 18,
+  fontWeight: "700",
+  color: "#1a6027",
+  fontFamily: "serif",
+  textAlign: "center",
+  flex: 1,
+},
+bellBtn: { padding: 4, width: 40, alignItems: "flex-end" },
   scroll: { padding: 20, gap: 16, paddingBottom: 40 },
   titulo: { fontSize: 24, fontWeight: "700", color: "#222" },
   sub: { fontSize: 14, color: "#888", lineHeight: 20 },
