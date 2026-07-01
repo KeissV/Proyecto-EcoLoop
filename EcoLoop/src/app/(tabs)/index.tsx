@@ -66,7 +66,7 @@ function Header() {
       </View>
       <TouchableOpacity
         style={styles.bellBtn}
-        onPress={() => router.push("/notificaciones")}
+        onPress={() => router.push("../notificaciones")}
       >
         <Text style={styles.bellIcon}>🔔</Text>
       </TouchableOpacity>
