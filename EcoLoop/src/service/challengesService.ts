@@ -1,13 +1,11 @@
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  increment,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
+    collection,
+    doc,
+    getDoc,
+    getDocs,
+    increment,
+    serverTimestamp,
+    setDoc
 } from "firebase/firestore";
 
 import { db } from "./firebaseConfig";
@@ -206,8 +204,14 @@ export async function getUserActiveDays(uid: string): Promise<number> {
     const fechaRegistro: Date = typeof data.fecha_registro.toDate === "function"
       ? data.fecha_registro.toDate()
       : new Date(data.fecha_registro);
+
+    // Comparar por dias de calendario (sin hora) para que el desbloqueo ocurra
+    // a medianoche del dispositivo, no exactamente 24 h despues del registro.
+    const today = new Date();
+    const todayMidnight = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const regMidnight = Date.UTC(fechaRegistro.getFullYear(), fechaRegistro.getMonth(), fechaRegistro.getDate());
     const msPerDay = 24 * 60 * 60 * 1000;
-    return Math.max(0, Math.floor((Date.now() - fechaRegistro.getTime()) / msPerDay));
+    return Math.max(0, Math.floor((todayMidnight - regMidnight) / msPerDay));
   } catch {
     return 0;
   }
