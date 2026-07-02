@@ -184,6 +184,10 @@ export default function TabsLayout() {
         name="medalla-conseguida"
         options={{ href: null }}
       />
+      <Tabs.Screen
+        name="racha"
+        options={{ href: null }}
+      />
     </Tabs>
   );
 }

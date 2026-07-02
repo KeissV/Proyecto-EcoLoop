@@ -17,7 +17,6 @@ import {
 } from "../../service/challengesService";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getLevelForPoints } from "../../service/levelService";
-import { registerDailyActivity } from "../../service/streakService";
 
 const C = {
   green: "#3BAB4F",
@@ -132,18 +131,11 @@ export default function RetosScreen() {
           ? userSnap.data().puntos_totales
           : 0;
 
-      // Registra la actividad de hoy y devuelve la racha ya recalculada
-      // (esto es lo que hace que la racha sea funcional dia a dia).
-      let streak = userSnap.exists() && typeof userSnap.data().racha_dias === "number"
+      // La racha se actualiza en la pantalla de inicio (index.tsx) al entrar a la app.
+      // Aqui solo leemos el valor ya calculado.
+      const streak = userSnap.exists() && typeof userSnap.data().racha_dias === "number"
         ? userSnap.data().racha_dias
         : 0;
-
-      try {
-        const streakResult = await registerDailyActivity(uid);
-        streak = streakResult.racha_dias;
-      } catch {
-        // Si falla la escritura de racha, seguimos mostrando el ultimo valor conocido.
-      }
 
       setRetos(merged);
       setStreakDays(streak);

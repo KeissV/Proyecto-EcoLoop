@@ -1,3 +1,4 @@
+import React, { useCallback, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   SafeAreaView,
@@ -8,6 +9,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { doc, getDoc } from "firebase/firestore";
+
+import { auth, db } from "../../service/firebaseConfig";
+import { registerDailyActivity } from "../../service/streakService";
 
 const C = {
   green: "#3BAB4F",
@@ -24,7 +30,6 @@ const C = {
   border: "#E5E5E5",
 };
 
-const router = useRouter();
 const CHALLENGES = [
   {
     id: 1,
@@ -88,24 +93,30 @@ function ImpactCard() {
   );
 }
 
-function StatsRow() {
+function StatsRow({ points, streakDays }: { points: number; streakDays: number }) {
+  const router = useRouter();
   return (
     <View style={styles.statsRow}>
       <View style={styles.statCard}>
         <Text style={styles.statIcon}>⭐</Text>
-        <Text style={styles.statValue}>2 450</Text>
+        <Text style={styles.statValue}>{points.toLocaleString("es")}</Text>
         <Text style={styles.statLabel}>Puntos</Text>
       </View>
-      <View style={[styles.statCard, { marginLeft: 12 }]}>
+      <TouchableOpacity
+        style={[styles.statCard, { marginLeft: 12 }]}
+        onPress={() => router.push("/(tabs)/racha" as any)}
+        activeOpacity={0.75}
+      >
         <Text style={styles.statIcon}>🔥</Text>
-        <Text style={styles.statValue}>12 días</Text>
+        <Text style={styles.statValue}>{streakDays} días</Text>
         <Text style={styles.statLabel}>Racha actual</Text>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
 
 function QuickActions() {
+  const router = useRouter();
   const items = [
       { icon: "🔍", label: "Buscar", color: C.blue, ruta: null },
       { icon: "🎯", label: "Reto", color: C.tealIcon, ruta: null },
@@ -171,6 +182,37 @@ function TipCard() {
 }
 
 export default function HomeScreen() {
+  const [streakDays, setStreakDays] = useState(0);
+  const [points, setPoints] = useState(0);
+  const [userName, setUserName] = useState("Usuario");
+
+  const loadData = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    try {
+      // Registra actividad y recalcula racha en la pantalla de inicio
+      const streakResult = await registerDailyActivity(uid);
+      setStreakDays(streakResult.racha_dias);
+    } catch {
+      // Si falla la escritura de racha, leemos el ultimo valor guardado
+    }
+
+    try {
+      const userSnap = await getDoc(doc(db, "usuarios", uid));
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        if (typeof data.racha_dias === "number") setStreakDays(data.racha_dias);
+        if (typeof data.puntos_totales === "number") setPoints(data.puntos_totales);
+        if (typeof data.nombre === "string" && data.nombre) setUserName(data.nombre);
+      }
+    } catch {
+      // Mantener valores por defecto si falla la lectura
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={C.white} />
@@ -182,14 +224,14 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Greeting */}
-        <Text style={styles.greeting}>¡Hola, Usuario!</Text>
+        <Text style={styles.greeting}>¡Hola, {userName}!</Text>
         <Text style={styles.subGreeting}>¿Listo para sumar impacto positivo hoy?</Text>
 
         {/* Impact card */}
         <ImpactCard />
 
         {/* Stats */}
-        <StatsRow />
+        <StatsRow points={points} streakDays={streakDays} />
 
         {/* Quick actions */}
         <View style={styles.card}>
