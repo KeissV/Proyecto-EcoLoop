@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "expo-router";
 import {
   SafeAreaView,
@@ -11,10 +11,13 @@ import {
   Image,
 } from "react-native";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { Ionicons } from "@expo/vector-icons";
-import { auth } from "../../service/firebaseConfig";
-import { obtenerUsuario } from "../../service/usuarioService";
+import { useFocusEffect } from "@react-navigation/native";
+import { auth, db } from "../../service/firebaseConfig";
+import { obtenerImpacto } from "../../service/impactoService";
 import { obtenerHistorial } from "../../service/historialService";
+import { registerDailyActivity } from "../../service/streakService";
 
 const C = {
   green: "#3BAB4F",
@@ -65,7 +68,7 @@ function ImpactCard({ co2 }: { co2: number }) {
   );
 }
 
-function StatsRow({ puntos }: { puntos: number }) {
+function StatsRow({ points, streakDays }: { points: number; streakDays: number }) {
   const router = useRouter();
   return (
     <View style={styles.statsRow}>
@@ -74,18 +77,16 @@ function StatsRow({ puntos }: { puntos: number }) {
         onPress={() => router.push("/(tabs)/historial" as any)}
       >
         <Text style={styles.statIcon}>⭐</Text>
-        <Text style={styles.statValue}>{puntos.toLocaleString()}</Text>
+        <Text style={styles.statValue}>{points.toLocaleString("es")}</Text>
         <Text style={styles.statLabel}>Puntos</Text>
       </TouchableOpacity>
-
       <TouchableOpacity
         style={[styles.statCard, { marginLeft: 12 }]}
-        onPress={() => {
-          // TODO: router.push("/(tabs)/racha") cuando esté lista
-        }}
+        onPress={() => router.push("/(tabs)/racha" as any)}
+        activeOpacity={0.75}
       >
         <Text style={styles.statIcon}>🔥</Text>
-        <Text style={styles.statValue}>12 días</Text>
+        <Text style={styles.statValue}>{streakDays} días</Text>
         <Text style={styles.statLabel}>Racha actual</Text>
       </TouchableOpacity>
     </View>
@@ -165,36 +166,49 @@ function TipCard() {
 }
 
 export default function HomeScreen() {
-  const [nombre, setNombre] = useState("Usuario");
-  const [puntos, setPuntos] = useState(0);
+  const [streakDays, setStreakDays] = useState(0);
+  const [points, setPoints] = useState(0);
+  const [userName, setUserName] = useState("Usuario");
   const [co2, setCo2] = useState(0);
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) return;
+  const loadData = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
 
-      try {
-        const [usuario, historial] = await Promise.all([
-          obtenerUsuario(user.uid),
-          obtenerHistorial(user.uid),
-        ]);
+    try {
+      const streakResult = await registerDailyActivity(uid);
+      setStreakDays(streakResult.racha_dias);
+    } catch {
+      // Si falla la escritura de racha, leemos el último valor guardado
+    }
 
-        if (usuario) {
-          setNombre(usuario.nombre.split(" ")[0]);
-          setCo2(usuario.co2_ahorrado_kg);
+    try {
+      const [userSnap, impactoResult, historial] = await Promise.all([
+        getDoc(doc(db, "usuarios", uid)),
+        obtenerImpacto(uid),
+        obtenerHistorial(uid),
+      ]);
+
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        if (typeof data.racha_dias === "number") setStreakDays(data.racha_dias);
+        if (typeof data.nombre === "string" && data.nombre) {
+          setUserName(data.nombre.split(" ")[0]);
         }
-
-        const totalPuntos = historial
-          .flatMap((s) => s.items)
-          .reduce((acc, item) => acc + item.puntos_ganados, 0);
-        setPuntos(totalPuntos);
-      } catch (error) {
-        console.error("Error cargando home:", error);
       }
-    });
 
-    return () => unsub();
+      setCo2(impactoResult.co2_ahorrado_kg);
+
+      const totalPuntos = historial
+        .flatMap((s) => s.items)
+        .reduce((acc, item) => acc + item.puntos_ganados, 0);
+      setPoints(totalPuntos);
+    } catch (error) {
+      console.error("Error cargando home:", error);
+    }
   }, []);
+
+  useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -206,11 +220,11 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.greeting}>¡Hola, {nombre}!</Text>
+        <Text style={styles.greeting}>¡Hola, {userName}!</Text>
         <Text style={styles.subGreeting}>¿Listo para sumar impacto positivo hoy?</Text>
 
         <ImpactCard co2={co2} />
-        <StatsRow puntos={puntos} />
+        <StatsRow points={points} streakDays={streakDays} />
 
         <View style={styles.card}>
           <QuickActions />
@@ -248,12 +262,8 @@ const styles = StyleSheet.create({
   },
   headerLeft: { width: 40 },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1a6027",
-    fontFamily: "serif",
-    textAlign: "center",
-    flex: 1,
+    fontSize: 18, fontWeight: "700", color: "#1a6027",
+    fontFamily: "serif", textAlign: "center", flex: 1,
   },
   headerLogo: { fontSize: 22 },
   bellBtn: { padding: 4, width: 40, alignItems: "flex-end" },

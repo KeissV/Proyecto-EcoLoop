@@ -35,7 +35,7 @@ export default function MedallaConseguidaScreen() {
           <Text style={styles.medalTitle}>{title || "Medalla desbloqueada"}</Text>
           <Text style={styles.description}>{description || "Has cumplido una condicion de logro."}</Text>
 
-          <TouchableOpacity style={styles.button} onPress={() => router.replace(nextRoute)}>
+          <TouchableOpacity style={styles.button} onPress={() => router.replace(nextRoute as any)}>
             <Text style={styles.buttonText}>Genial</Text>
           </TouchableOpacity>
         </View>

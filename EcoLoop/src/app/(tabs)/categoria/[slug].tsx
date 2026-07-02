@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Image,
   SafeAreaView,
@@ -10,6 +10,10 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+
+import { auth } from "../../../service/firebaseConfig";
+import { validateCategoryVisitForChallenges } from "../../../service/challengesService";
+import { validateAndUnlockAchievements } from "../../../service/achievementsService";
 
 const C = {
   green: "#2FBF6B",
@@ -399,9 +403,52 @@ function resolveConfig(slug: string): CategoryConfig {
 
 export default function CategoryDetailScreen() {
   const router = useRouter();
-  const { slug } = useLocalSearchParams<{ slug?: string }>();
+  const { slug, retoId } = useLocalSearchParams<{ slug?: string; retoId?: string }>();
 
   const config = useMemo(() => resolveConfig(slug || "general"), [slug]);
+  const [rewardRetoId, setRewardRetoId] = useState<string | null>(null);
+  const [rewardPoints, setRewardPoints] = useState<string | null>(null);
+  const [rewardAchievementTitle, setRewardAchievementTitle] = useState<string | null>(null);
+  const [rewardAchievementDescription, setRewardAchievementDescription] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function validateCategoryVisit() {
+      const uid = auth.currentUser?.uid;
+
+      if (!uid || !slug) {
+        return;
+      }
+
+      try {
+        const completed = await validateCategoryVisitForChallenges(uid, slug, retoId);
+
+        if (active && completed.length > 0) {
+          const first = completed[0];
+          setRewardRetoId(first.id);
+          setRewardPoints(`${first.puntos}`);
+
+          // Verificar logros justo despues de completar el reto
+          try {
+            const unlocked = await validateAndUnlockAchievements(uid);
+            if (active && unlocked.length > 0) {
+              setRewardAchievementTitle(unlocked[0].title);
+              setRewardAchievementDescription(unlocked[0].description);
+            }
+          } catch {}
+        }
+      } catch {
+        // No interrumpe la visualizacion de la categoria si falla la validacion.
+      }
+    }
+
+    validateCategoryVisit();
+
+    return () => {
+      active = false;
+    };
+  }, [slug, retoId]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -421,6 +468,33 @@ export default function CategoryDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {rewardRetoId ? (
+          <View style={styles.rewardNoticeCard}>
+            <View style={styles.rewardNoticeHeader}>
+              <Text style={styles.rewardNoticeEmoji}>✅</Text>
+              <Text style={styles.rewardNoticeTitle}>Reto completado</Text>
+            </View>
+            <Text style={styles.rewardNoticeDescription}>Revisaste esta categoria y completaste uno de tus retos activos.</Text>
+            <TouchableOpacity
+              style={styles.rewardNoticeButton}
+              onPress={() =>
+                router.push({
+                  pathname: "/reto-completado",
+                  params: {
+                    retoId: rewardRetoId,
+                    points: rewardPoints ?? "0",
+                    achievementTitle: rewardAchievementTitle ?? undefined,
+                    achievementDescription: rewardAchievementDescription ?? undefined,
+                  },
+                })
+              }
+            >
+              <Text style={styles.rewardNoticeButtonText}>Reclamar recompensa</Text>
+              <Text style={styles.rewardNoticeButtonArrow}>→</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.heroCard}>
           <View style={[styles.heroCircle, { backgroundColor: config.heroBg }]}>
             <Image source={config.heroIcon} style={styles.heroIcon} resizeMode="contain" />
@@ -509,6 +583,52 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 24,
   },
+  rewardNoticeCard: {
+    backgroundColor: "#EAF8ED",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#CAE7D0",
+    padding: 14,
+    marginBottom: 14,
+  },
+  rewardNoticeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  rewardNoticeEmoji: {
+    fontSize: 18,
+  },
+  rewardNoticeTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: C.deepGreen,
+  },
+  rewardNoticeDescription: {
+    fontSize: 13,
+    color: C.muted,
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  rewardNoticeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: C.deepGreen,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  rewardNoticeButtonText: {
+    color: C.white,
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  rewardNoticeButtonArrow: {
+    color: C.white,
+    fontWeight: "700",
+    fontSize: 14,
+  },
   heroCard: {
     backgroundColor: C.white,
     borderRadius: 16,
@@ -525,15 +645,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   heroIcon: {
-    width: 28,
-    height: 28,
+    width: 36,
+    height: 36,
   },
   heroEmoji: {
     fontSize: 28,
-  },
-  heroIcon: {
-    width: 36,
-    height: 36,
   },
   tagPill: {
     backgroundColor: "#E8EDF3",

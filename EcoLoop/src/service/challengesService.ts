@@ -1,16 +1,16 @@
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  increment,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
+    collection,
+    doc,
+    getDoc,
+    getDocs,
+    increment,
+    serverTimestamp,
+    setDoc
 } from "firebase/firestore";
 
 import { db } from "./firebaseConfig";
+import { getLevelForPoints } from "./levelService";
+import { registerDailyActivity } from "./streakService";
 
 type ChallengeStatus = "disponible" | "en_curso" | "terminado";
 
@@ -38,6 +38,7 @@ export type ChallengeGlobal = {
   activo: boolean;
   destacado: boolean;
   orden: number;
+  dia_desbloqueo: number;
   validacion_accion: ChallengeValidationAction;
   estado_inicial: ChallengeStatus;
   validacion_objetivo: number;
@@ -79,6 +80,12 @@ export type ChallengeView = {
 export type SearchEvidence = {
   materialId: string;
   category: string;
+};
+
+export type ChallengeCompletionInfo = ChallengeGlobal & {
+  levelUp: boolean;
+  levelName: string;
+  levelNumber: number;
 };
 
 const SEARCH_VALIDATION_ACTIONS: ChallengeValidationAction[] = [
@@ -145,6 +152,7 @@ function parseChallengeGlobal(id: string, data: Record<string, unknown>): Challe
     activo: typeof data.activo === "boolean" ? data.activo : true,
     destacado: typeof data.destacado === "boolean" ? data.destacado : false,
     orden: typeof data.orden === "number" ? data.orden : 0,
+    dia_desbloqueo: typeof data.dia_desbloqueo === "number" ? Math.max(0, data.dia_desbloqueo) : 0,
     validacion_accion: validationAction,
     estado_inicial: data.estado_inicial === "en_curso" ? "en_curso" : "disponible",
     validacion_objetivo: validationTargetRaw > 0 ? validationTargetRaw : 1,
@@ -176,6 +184,37 @@ function parseChallengeUser(data: Record<string, unknown>, fallbackId: string, f
     fecha_completado: data.fecha_completado,
     puntos_otorgados: typeof data.puntos_otorgados === "number" ? data.puntos_otorgados : 0,
   };
+}
+
+/**
+ * Devuelve cuantos dias completos han pasado desde que el usuario se registro.
+ * Si no existe fecha_registro en el doc del usuario, la establece ahora (primer acceso).
+ * Esto se usa para el sistema de desbloqueo diario de retos.
+ */
+export async function getUserActiveDays(uid: string): Promise<number> {
+  try {
+    const userSnap = await getDoc(doc(db, "usuarios", uid));
+    if (!userSnap.exists()) return 0;
+    const data = userSnap.data();
+    if (!data.fecha_registro) {
+      // Primer acceso: registrar la fecha de inicio para empezar el conteo.
+      await setDoc(doc(db, "usuarios", uid), { fecha_registro: serverTimestamp() }, { merge: true });
+      return 0;
+    }
+    const fechaRegistro: Date = typeof data.fecha_registro.toDate === "function"
+      ? data.fecha_registro.toDate()
+      : new Date(data.fecha_registro);
+
+    // Comparar por dias de calendario (sin hora) para que el desbloqueo ocurra
+    // a medianoche del dispositivo, no exactamente 24 h despues del registro.
+    const today = new Date();
+    const todayMidnight = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const regMidnight = Date.UTC(fechaRegistro.getFullYear(), fechaRegistro.getMonth(), fechaRegistro.getDate());
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.max(0, Math.floor((todayMidnight - regMidnight) / msPerDay));
+  } catch {
+    return 0;
+  }
 }
 
 export async function fetchGlobalChallenges() {
@@ -302,7 +341,7 @@ export async function addManualProgress(uid: string, challengeId: string, step =
   const total = current?.progreso_total ?? challenge.validacion_objetivo;
 
   if (current?.completado) {
-    return { completed: true, challenge };
+    return { completed: true, challenge, levelUp: false, levelName: "" };
   }
 
   const next = Math.min(total, currentValue + Math.max(1, step));
@@ -315,18 +354,16 @@ export async function addManualProgress(uid: string, challengeId: string, step =
       estado: completed ? "terminado" : "en_curso",
       progreso_actual: next,
       progreso_total: total,
-      completado: completed,
-      fecha_completado: completed ? serverTimestamp() : null,
-      puntos_otorgados: completed ? challenge.puntos : 0,
     },
     { merge: true }
   );
 
   if (completed) {
-    await completeChallenge(uid, challengeId);
+    const result = await completeChallenge(uid, challengeId);
+    return { completed, challenge: result, levelUp: result.levelUp, levelName: result.levelName };
   }
 
-  return { completed, challenge };
+  return { completed, challenge, levelUp: false, levelName: "" };
 }
 
 async function registerChallengeEvidence(uid: string, challengeId: string, key: string) {
@@ -383,19 +420,23 @@ async function applySearchProgress(uid: string, challenge: ChallengeGlobal, evid
   const current = await getUserChallenge(uid, challenge.id, challenge.validacion_objetivo);
 
   if (current?.completado) {
-    return { completed: false, challenge, changed: false };
+    return { completed: false, challenge, changed: false, levelUp: false, levelName: "" };
+  }
+
+  if (current?.estado !== "en_curso") {
+    return { completed: false, challenge, changed: false, levelUp: false, levelName: "" };
   }
 
   const match = matchSearchEvidence(challenge, evidence);
 
   if (!match.valid) {
-    return { completed: false, challenge, changed: false };
+    return { completed: false, challenge, changed: false, levelUp: false, levelName: "" };
   }
 
   const isNewEvidence = await registerChallengeEvidence(uid, challenge.id, match.key);
 
   if (!isNewEvidence) {
-    return { completed: false, challenge, changed: false };
+    return { completed: false, challenge, changed: false, levelUp: false, levelName: "" };
   }
 
   const currentValue = current?.progreso_actual ?? 0;
@@ -410,18 +451,125 @@ async function applySearchProgress(uid: string, challenge: ChallengeGlobal, evid
       estado: completed ? "terminado" : "en_curso",
       progreso_actual: next,
       progreso_total: total,
-      completado: completed,
-      fecha_completado: completed ? serverTimestamp() : null,
-      puntos_otorgados: completed ? challenge.puntos : 0,
     },
     { merge: true }
   );
 
   if (completed) {
-    await completeChallenge(uid, challenge.id);
+    const result = await completeChallenge(uid, challenge.id);
+    return { completed, challenge, changed: true, levelUp: result.levelUp, levelName: result.levelName };
   }
 
-  return { completed, challenge, changed: true };
+  return { completed, challenge, changed: true, levelUp: false, levelName: "" };
+}
+
+export function canonicalCategoryKey(value: string) {
+  const normalized = normalizeText(value);
+
+  if (normalized.includes("organ")) return "organico";
+  if (normalized.includes("plastic")) return "plastico";
+  if (normalized.includes("papel") || normalized.includes("carton")) return "papel-carton";
+  if (normalized.includes("vidrio")) return "vidrio";
+  if (normalized.includes("metal") || normalized.includes("alumin")) return "metal";
+  if (normalized.includes("pelig") || normalized.includes("hazard")) return "peligroso";
+
+  return normalized;
+}
+
+export function hasCategoryRequirement(challenge: ChallengeGlobal) {
+  return (
+    challenge.validacion_accion === "manual_confirmacion" &&
+    (challenge.validacion_categoria.trim().length > 0 ||
+      challenge.validacion_categorias.length > 0 ||
+      challenge.tipo === "clasificacion")
+  );
+}
+
+function matchCategoryVisit(challenge: ChallengeGlobal, category: string) {
+  const visitedKey = canonicalCategoryKey(category);
+
+  if (challenge.validacion_categorias.length) {
+    const allowedKeys = challenge.validacion_categorias.map(canonicalCategoryKey);
+    if (allowedKeys.includes(visitedKey)) {
+      return { valid: true, key: `categoria-${visitedKey}` };
+    }
+    return { valid: false, key: "" };
+  }
+
+  if (challenge.validacion_categoria) {
+    if (canonicalCategoryKey(challenge.validacion_categoria) === visitedKey) {
+      return { valid: true, key: `categoria-${visitedKey}` };
+    }
+    return { valid: false, key: "" };
+  }
+
+  // Repaso libre: no hay categoria especifica configurada, cualquier categoria visitada cumple el reto.
+  return { valid: true, key: `categoria-${visitedKey}` };
+}
+
+async function applyCategoryVisitProgress(uid: string, challenge: ChallengeGlobal, category: string) {
+  const current = await getUserChallenge(uid, challenge.id, challenge.validacion_objetivo);
+
+  if (current?.completado) {
+    return { completed: false, challenge, changed: false, levelUp: false, levelName: "" };
+  }
+
+  if (current?.estado !== "en_curso") {
+    return { completed: false, challenge, changed: false, levelUp: false, levelName: "" };
+  }
+
+  const match = matchCategoryVisit(challenge, category);
+
+  if (!match.valid) {
+    return { completed: false, challenge, changed: false, levelUp: false, levelName: "" };
+  }
+
+  const isNewEvidence = await registerChallengeEvidence(uid, challenge.id, match.key);
+
+  if (!isNewEvidence) {
+    return { completed: false, challenge, changed: false, levelUp: false, levelName: "" };
+  }
+
+  const currentValue = current?.progreso_actual ?? 0;
+  const total = current?.progreso_total ?? challenge.validacion_objetivo;
+  const next = Math.min(total, currentValue + 1);
+  const completed = next >= total;
+
+  await setDoc(
+    doc(db, "usuarios", uid, "retos_usuario", challenge.id),
+    {
+      reto_id: challenge.id,
+      estado: completed ? "terminado" : "en_curso",
+      progreso_actual: next,
+      progreso_total: total,
+    },
+    { merge: true }
+  );
+
+  if (completed) {
+    const result = await completeChallenge(uid, challenge.id);
+    return { completed, challenge, changed: true, levelUp: result.levelUp, levelName: result.levelName };
+  }
+
+  return { completed, challenge, changed: true, levelUp: false, levelName: "" };
+}
+
+export async function validateCategoryVisitForChallenges(uid: string, category: string, challengeId?: string) {
+  const globals = await fetchGlobalChallenges();
+  const target = (
+    challengeId ? globals.filter((challenge) => challenge.id === challengeId) : globals
+  ).filter((challenge) => hasCategoryRequirement(challenge));
+
+  const completed: ChallengeCompletionInfo[] = [];
+
+  for (const challenge of target) {
+    const result = await applyCategoryVisitProgress(uid, challenge, category);
+    if (result.completed) {
+      completed.push({ ...challenge, levelUp: result.levelUp, levelName: result.levelName, levelNumber: 0 });
+    }
+  }
+
+  return completed;
 }
 
 export async function validateSearchForChallenges(uid: string, evidence: SearchEvidence, challengeId?: string) {
@@ -430,19 +578,19 @@ export async function validateSearchForChallenges(uid: string, evidence: SearchE
     ? globals.filter((challenge) => challenge.id === challengeId)
     : globals.filter((challenge) => isSearchValidation(challenge.validacion_accion));
 
-  const completed: ChallengeGlobal[] = [];
+  const completed: ChallengeCompletionInfo[] = [];
 
   for (const challenge of target) {
     const result = await applySearchProgress(uid, challenge, evidence);
     if (result.completed) {
-      completed.push(challenge);
+      completed.push({ ...challenge, levelUp: result.levelUp, levelName: result.levelName, levelNumber: 0 });
     }
   }
 
   return completed;
 }
 
-export async function completeChallenge(uid: string, challengeId: string) {
+export async function completeChallenge(uid: string, challengeId: string): Promise<ChallengeCompletionInfo> {
   const challengeRef = doc(db, "retos", challengeId);
   const challengeSnap = await getDoc(challengeRef);
 
@@ -456,13 +604,23 @@ export async function completeChallenge(uid: string, challengeId: string) {
     throw new Error("Reto inválido");
   }
 
+  const userRef = doc(db, "usuarios", uid);
   const userChallengeRef = doc(db, "usuarios", uid, "retos_usuario", challengeId);
-  const userChallengeSnap = await getDoc(userChallengeRef);
+  const [userChallengeSnap, userSnap] = await Promise.all([getDoc(userChallengeRef), getDoc(userRef)]);
   const alreadyCompleted = userChallengeSnap.exists() && userChallengeSnap.data().completado === true;
 
+  const previousPoints =
+    userSnap.exists() && typeof userSnap.data().puntos_totales === "number" ? userSnap.data().puntos_totales : 0;
+
   if (alreadyCompleted) {
-    return challengeData;
+    const level = getLevelForPoints(previousPoints);
+    return { ...challengeData, levelUp: false, levelName: level.name, levelNumber: level.level };
   }
+
+  const newPoints = previousPoints + challengeData.puntos;
+  const previousLevel = getLevelForPoints(previousPoints);
+  const newLevel = getLevelForPoints(newPoints);
+  const levelUp = newLevel.level > previousLevel.level;
 
   await setDoc(
     userChallengeRef,
@@ -479,10 +637,13 @@ export async function completeChallenge(uid: string, challengeId: string) {
   );
 
   await setDoc(
-    doc(db, "usuarios", uid),
+    userRef,
     {
-      puntos_totales: increment(challengeData.puntos),
+      puntos_totales: newPoints,
+      nivel: newLevel.name,
+      nivel_numero: newLevel.level,
       retos_completados: increment(1),
+      objetos_reciclados: increment(1),
       ultimo_ingreso: serverTimestamp(),
     },
     { merge: true }
@@ -499,5 +660,12 @@ export async function completeChallenge(uid: string, challengeId: string) {
     icono: "check",
   });
 
-  return challengeData;
+  try {
+    // Completar un reto tambien cuenta como actividad del dia para la racha.
+    await registerDailyActivity(uid);
+  } catch {
+    // No bloqueamos la recompensa del reto si falla la actualizacion de racha.
+  }
+
+  return { ...challengeData, levelUp, levelName: newLevel.name, levelNumber: newLevel.level };
 }

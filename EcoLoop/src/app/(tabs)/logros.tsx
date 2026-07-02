@@ -53,6 +53,7 @@ type AchievementDoc = {
 
 type UserMetrics = {
   lecciones_completadas: number;
+  materiales_consultados: number;
   racha_dias: number;
   objetos_reciclados: number;
   retos_completados: number;
@@ -105,7 +106,7 @@ function readMetricValue(metrics: UserMetrics, condicionTipo: string) {
   }
 
   if (normalized.includes("materiales") || normalized.includes("consultados")) {
-    return metrics.lecciones_completadas;
+    return metrics.materiales_consultados;
   }
 
   if (normalized.includes("racha")) {
@@ -195,7 +196,13 @@ export default function LogrosScreen() {
     try {
       setLoading(true);
 
-      const unlockedNow = await validateAndUnlockAchievements(uid);
+      let unlockedNow: Awaited<ReturnType<typeof validateAndUnlockAchievements>> = [];
+      try {
+        unlockedNow = await validateAndUnlockAchievements(uid);
+      } catch {
+        // Si falla la validacion (ej. sin conexion), seguimos mostrando los logros normalmente.
+      }
+
       if (unlockedNow.length > 0) {
         const first = unlockedNow[0];
         router.push({
@@ -210,8 +217,9 @@ export default function LogrosScreen() {
       ]);
 
       const userData = userSnap.exists() ? userSnap.data() : {};
-      const metrics: UserMetrics = {
+     const metrics: UserMetrics = {
         lecciones_completadas: typeof userData.lecciones_completadas === "number" ? userData.lecciones_completadas : 0,
+        materiales_consultados: typeof userData.materiales_consultados === "number" ? userData.materiales_consultados : 0,
         racha_dias: typeof userData.racha_dias === "number" ? userData.racha_dias : 0,
         objetos_reciclados: typeof userData.objetos_reciclados === "number" ? userData.objetos_reciclados : 0,
         retos_completados: typeof userData.retos_completados === "number" ? userData.retos_completados : 0,
